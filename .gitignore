@@ -1,0 +1,28 @@
+# Datasets originales y generados
+data/
+dataset_yolo/
+dataset_colon/
+
+# Archivos comprimidos
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

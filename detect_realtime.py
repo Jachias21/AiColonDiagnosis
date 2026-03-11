@@ -460,7 +460,8 @@ def _back_button(parent, command) -> tk.Button:
 
 def show_main_menu() -> str:
     """
-    Pantalla principal. Devuelve 'start' o 'exit'.
+    Pantalla principal.
+    Devuelve 'start', 'phase1', 'phase2', 'phase3' o 'exit'.
     """
     result = {"action": "exit"}
 
@@ -509,7 +510,41 @@ def show_main_menu() -> str:
     def on_exit():
         root.destroy()
 
-    _make_button(root, "▶  Iniciar diagnóstico", ACCENT_BLUE, on_start).pack(pady=(0, 8))
+    # Botón principal: flujo completo
+    _make_button(
+        root, "▶  Diagnóstico completo (3 fases)", ACCENT_BLUE, on_start,
+    ).pack(pady=(0, 12))
+
+    # Separador
+    tk.Label(
+        root, text="── o ir directamente a una fase ──",
+        font=("Segoe UI", 9), fg=FG_SUB, bg=BG_DARK,
+    ).pack(pady=(0, 8))
+
+    # Botones de fases individuales
+    phases_frame = tk.Frame(root, bg=BG_DARK)
+    phases_frame.pack(pady=(0, 8))
+
+    def make_phase_action(p):
+        def action():
+            result["action"] = p
+            root.destroy()
+        return action
+
+    phase_btns = [
+        ("📋 Historial", ACCENT_YELLOW, "phase1"),
+        ("📹 Colonoscopia", ACCENT_GREEN, "phase2"),
+        ("🔬 Microscopio", ACCENT_MAUVE, "phase3"),
+    ]
+    for text, color, phase_key in phase_btns:
+        tk.Button(
+            phases_frame, text=text, bg=color, fg=BG_DARK,
+            activebackground=color, command=make_phase_action(phase_key),
+            font=("Segoe UI", 10, "bold"), width=17, height=1,
+            relief="flat", cursor="hand2",
+        ).pack(side="left", padx=5)
+
+    tk.Label(root, text="", bg=BG_DARK).pack(pady=2)
 
     tk.Button(
         root, text="Salir", bg=BTN_INACTIVE, fg=FG_TEXT,
@@ -517,7 +552,7 @@ def show_main_menu() -> str:
         font=("Segoe UI", 10), width=32, height=1, relief="flat", cursor="hand2",
     ).pack(pady=(0, 20))
 
-    _center_window(root, 520, 420)
+    _center_window(root, 680, 520)
     root.mainloop()
     return result["action"]
 
@@ -867,122 +902,148 @@ def main() -> None:
 
         # ── MENÚ PRINCIPAL ──
         action = show_main_menu()
-        if action != "start":
+        if action == "exit":
             break
 
-        # ═══════════════════════════════
-        # FASE 1: HISTORIAL MÉDICO
-        # ═══════════════════════════════
-        print("─" * 55)
-        print("  FASE 1: HISTORIAL MÉDICO")
-        print("─" * 55)
+        # ───────────────────────────────────────────
+        # Funciones auxiliares para ejecutar cada fase
+        # ───────────────────────────────────────────
 
-        action, filepath = show_phase1_menu()
-        if action != "load" or filepath is None:
-            continue  # → Inicio
+        def run_phase1() -> tuple[bool, str]:
+            """Ejecuta Fase 1. Devuelve (quiere_avanzar, status_text)."""
+            print("─" * 55)
+            print("  FASE 1: HISTORIAL MÉDICO")
+            print("─" * 55)
 
-        patient_data = load_patient_data(filepath)
-        if patient_data is None:
-            messagebox.showerror(
-                "Error", "No se pudieron cargar los datos del paciente."
-            )
-            continue
+            act, filepath = show_phase1_menu()
+            if act != "load" or filepath is None:
+                return False, "OMITIDO"
 
-        print(f"  ✓ Datos cargados: {len(patient_data)} campos")
-        is_positive, probability = predict_cancer_risk(
-            history_model, patient_data
-        )
-        status = "RIESGO" if is_positive else "SIN RIESGO"
-        print(f"  Resultado: {status} ({probability:.2%})")
+            patient_data = load_patient_data(filepath)
+            if patient_data is None:
+                messagebox.showerror(
+                    "Error", "No se pudieron cargar los datos del paciente."
+                )
+                return False, "ERROR"
 
-        action = show_phase1_result(patient_data, is_positive, probability)
-        if action != "next":
-            continue  # → Inicio
+            print(f"  ✓ Datos cargados: {len(patient_data)} campos")
+            is_pos, prob = predict_cancer_risk(history_model, patient_data)
+            st = "RIESGO" if is_pos else "SIN RIESGO"
+            print(f"  Resultado: {st} ({prob:.2%})")
 
-        # ═══════════════════════════════
-        # FASE 2: COLONOSCOPIA
-        # ═══════════════════════════════
-        print()
-        print("─" * 55)
-        print("  FASE 2: COLONOSCOPIA")
-        print("─" * 55)
+            act = show_phase1_result(patient_data, is_pos, prob)
+            if act == "next":
+                return True, st
+            return False, st
 
-        action, video_path = show_video_menu(
-            2, "Colonoscopia", ACCENT_GREEN
-        )
-        if action == "exit":
-            continue  # → Inicio
-
-        source = video_path if action == "video" else WEBCAM_INDEX
-        mode = "Video" if action == "video" else "Webcam"
-        print(f"  Modo: {mode}")
-
-        has_polyps, polyp_count = process_video_phase(
-            source, mode, colonoscopy_model,
-            phase_label="Fase 2: Colonoscopia",
-            phase_color="polyp",
-        )
-
-        action = show_video_result(
-            phase_num=2,
-            phase_title="Colonoscopia",
-            has_detections=has_polyps,
-            total_positives=polyp_count,
-            has_next_phase=True,
-        )
-        if action != "next":
-            continue  # → Inicio
-
-        # ═══════════════════════════════
-        # FASE 3: MICROSCOPIO
-        # ═══════════════════════════════
-        print()
-        print("─" * 55)
-        print("  FASE 3: ANÁLISIS MICROSCÓPICO")
-        print("─" * 55)
-
-        action, video_path = show_video_menu(
-            3, "Análisis Microscópico", ACCENT_MAUVE
-        )
-        if action == "exit":
-            continue  # → Inicio
-
-        source = video_path if action == "video" else WEBCAM_INDEX
-        mode = "Video" if action == "video" else "Webcam"
-        print(f"  Modo: {mode}")
-
-        has_cancer, cancer_count = process_video_phase(
-            source, mode, microscopy_model,
-            phase_label="Fase 3: Microscopio",
-            phase_color="cancer",
-        )
-
-        action = show_video_result(
-            phase_num=3,
-            phase_title="Análisis Microscópico",
-            has_detections=has_cancer,
-            total_positives=cancer_count,
-            has_next_phase=True,
-        )
-
-        if action == "next":
-            # ═══════════════════════════════
-            # RESULTADO FINAL
-            # ═══════════════════════════════
+        def run_phase2() -> tuple[bool, int]:
+            """Ejecuta Fase 2. Devuelve (tiene_detecciones, conteo)."""
             print()
-            print("═" * 55)
-            print("  RESULTADO FINAL")
-            print("═" * 55)
-            print(f"  Fase 1 — Historial:    {status}")
-            print(f"  Fase 2 — Colonoscopia: {polyp_count} detecciones")
-            print(f"  Fase 3 — Microscopio:  {cancer_count} detecciones")
-            print("═" * 55)
+            print("─" * 55)
+            print("  FASE 2: COLONOSCOPIA")
+            print("─" * 55)
 
-            show_final_result(
-                phase1_positive=is_positive,
-                phase2_positives=polyp_count,
-                phase3_positives=cancer_count,
+            act, video_path = show_video_menu(2, "Colonoscopia", ACCENT_GREEN)
+            if act == "exit":
+                return False, 0
+
+            source = video_path if act == "video" else WEBCAM_INDEX
+            mode = "Video" if act == "video" else "Webcam"
+            print(f"  Modo: {mode}")
+
+            has_det, count = process_video_phase(
+                source, mode, colonoscopy_model,
+                phase_label="Fase 2: Colonoscopia",
+                phase_color="polyp",
             )
+
+            act = show_video_result(
+                phase_num=2,
+                phase_title="Colonoscopia",
+                has_detections=has_det,
+                total_positives=count,
+                has_next_phase=True,
+            )
+            if act == "next":
+                return True, count
+            return False, count
+
+        def run_phase3() -> tuple[bool, int]:
+            """Ejecuta Fase 3. Devuelve (quiere_ver_resultado, conteo)."""
+            print()
+            print("─" * 55)
+            print("  FASE 3: ANÁLISIS MICROSCÓPICO")
+            print("─" * 55)
+
+            act, video_path = show_video_menu(
+                3, "Análisis Microscópico", ACCENT_MAUVE
+            )
+            if act == "exit":
+                return False, 0
+
+            source = video_path if act == "video" else WEBCAM_INDEX
+            mode = "Video" if act == "video" else "Webcam"
+            print(f"  Modo: {mode}")
+
+            has_det, count = process_video_phase(
+                source, mode, microscopy_model,
+                phase_label="Fase 3: Microscopio",
+                phase_color="cancer",
+            )
+
+            act = show_video_result(
+                phase_num=3,
+                phase_title="Análisis Microscópico",
+                has_detections=has_det,
+                total_positives=count,
+                has_next_phase=True,
+            )
+            if act == "next":
+                return True, count
+            return False, count
+
+        # ───────────────────────────────────────────
+        # Ejecutar según la acción del menú principal
+        # ───────────────────────────────────────────
+
+        if action == "start":
+            # ══ FLUJO COMPLETO: Fase 1 → 2 → 3 → Resultado ══
+            advance, status = run_phase1()
+            if not advance:
+                continue
+
+            advance, polyp_count = run_phase2()
+            if not advance:
+                continue
+
+            advance, cancer_count = run_phase3()
+            if advance:
+                print()
+                print("═" * 55)
+                print("  RESULTADO FINAL")
+                print("═" * 55)
+                print(f"  Fase 1 — Historial:    {status}")
+                print(f"  Fase 2 — Colonoscopia: {polyp_count} detecciones")
+                print(f"  Fase 3 — Microscopio:  {cancer_count} detecciones")
+                print("═" * 55)
+
+                show_final_result(
+                    phase1_positive=(status == "RIESGO"),
+                    phase2_positives=polyp_count,
+                    phase3_positives=cancer_count,
+                )
+
+        elif action == "phase1":
+            # ══ SOLO FASE 1 ══
+            run_phase1()
+
+        elif action == "phase2":
+            # ══ SOLO FASE 2: Colonoscopia ══
+            run_phase2()
+
+        elif action == "phase3":
+            # ══ SOLO FASE 3: Microscopio ══
+            run_phase3()
 
         # Vuelve al menú principal automáticamente
 

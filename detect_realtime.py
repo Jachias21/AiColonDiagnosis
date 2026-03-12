@@ -42,7 +42,8 @@ import numpy as np
 # Rutas a los modelos (cambiar cuando estén entrenados)
 MODEL_HISTORY: str = "models/history_model.pkl"     # Modelo de historial clínico
 MODEL_COLONOSCOPY: str = "models/colonoscopy.pt"    # YOLO para pólipos
-MODEL_MICROSCOPY: str = "models/microscopy.pt"      # YOLO para tejido cancerígeno
+MODEL_MICROSCOPY: str = "models/microscopy.pt"      # Clasificación tejido
+MODEL_MICROSCOPY_META: str = "models/microscopy_meta.json"  # Metadata del modelo ganador
 
 # Umbrales
 CONFIDENCE_THRESHOLD: float = 0.25
@@ -122,6 +123,102 @@ def load_history_model(model_path: str) -> Any:
         return model
     except Exception as e:
         print(f"  ✗ Error cargando historial: {e}")
+        return None
+
+
+def load_classification_model(model_path: str, meta_path: str, label: str) -> dict | None:
+    """
+    Carga un modelo de clasificación (EfficientNet, ResNet, etc.).
+    Necesita el archivo de metadata JSON para saber qué arquitectura usar.
+    Devuelve un dict con 'model', 'transform', 'class_names' o None (modo demo).
+    """
+    import json as _json
+
+    model_file = Path(model_path)
+    meta_file = Path(meta_path)
+
+    if not model_file.exists():
+        print(f"  ⚠ Modelo {label} no encontrado: '{model_path}' → modo DEMO")
+        return None
+    if not meta_file.exists():
+        print(f"  ⚠ Metadata no encontrada: '{meta_path}' → modo DEMO")
+        return None
+
+    try:
+        import torch
+        from torchvision import models, transforms
+
+        with open(meta_file, "r", encoding="utf-8") as f:
+            meta = _json.load(f)
+
+        build_fn = meta["build_fn"]
+        class_names = meta.get("class_names", ["colon_aca", "colon_n"])
+        image_size = meta.get("image_size", 224)
+        arch_name = meta.get("architecture", "")
+
+        # Construir modelo con la misma arquitectura usada en entrenamiento
+        model_fn = getattr(models, build_fn)
+        model = model_fn(weights=None)  # Sin pesos pre-entrenados
+
+        # Reemplazar cabeza igual que en el entrenamiento
+        import torch.nn as nn
+        num_classes = len(class_names)
+
+        if "efficientnet" in build_fn:
+            in_f = model.classifier[1].in_features
+            model.classifier = nn.Sequential(
+                nn.Dropout(0.3), nn.Linear(in_f, num_classes),
+            )
+        elif "resnet" in build_fn:
+            in_f = model.fc.in_features
+            model.fc = nn.Sequential(
+                nn.Dropout(0.3), nn.Linear(in_f, num_classes),
+            )
+        elif "convnext" in build_fn:
+            in_f = model.classifier[2].in_features
+            old_cls = model.classifier
+            model.classifier = nn.Sequential(
+                old_cls[0], old_cls[1],
+                nn.Dropout(0.3), nn.Linear(in_f, num_classes),
+            )
+        elif "densenet" in build_fn:
+            in_f = model.classifier.in_features
+            model.classifier = nn.Sequential(
+                nn.Dropout(0.3), nn.Linear(in_f, num_classes),
+            )
+        elif "vit" in build_fn:
+            in_f = model.heads.head.in_features
+            model.heads = nn.Sequential(
+                nn.Dropout(0.3), nn.Linear(in_f, num_classes),
+            )
+
+        # Cargar pesos entrenados
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        state_dict = torch.load(str(model_file), map_location=device, weights_only=True)
+        model.load_state_dict(state_dict)
+        model.to(device)
+        model.eval()
+
+        # Transform para inferencia (mismo que en entrenamiento)
+        imagenet_mean = [0.485, 0.456, 0.406]
+        imagenet_std = [0.229, 0.224, 0.225]
+        transform = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize((image_size, image_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(imagenet_mean, imagenet_std),
+        ])
+
+        print(f"  ✓ Modelo {label} cargado: {arch_name} ({model_path})")
+        return {
+            "model": model,
+            "transform": transform,
+            "class_names": class_names,
+            "device": device,
+            "architecture": arch_name,
+        }
+    except Exception as e:
+        print(f"  ✗ Error cargando {label}: {e}")
         return None
 
 
@@ -418,6 +515,155 @@ def process_video_phase(
 
     has_detections = total_positives > 0
     return has_detections, total_positives
+
+
+def run_classification_inference(
+    model_bundle: dict, frame: np.ndarray
+) -> tuple[str, float]:
+    """
+    Ejecuta clasificación sobre un frame.
+    Devuelve (clase_predicha, confianza).
+    """
+    import torch
+
+    model = model_bundle["model"]
+    transform = model_bundle["transform"]
+    device = model_bundle["device"]
+    class_names = model_bundle["class_names"]
+
+    # frame es BGR (OpenCV) → RGB para el transform
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    tensor = transform(rgb).unsqueeze(0).to(device)
+
+    with torch.no_grad():
+        outputs = model(tensor)
+        probs = torch.softmax(outputs, dim=1)[0]
+        conf, cls_idx = probs.max(0)
+
+    return class_names[cls_idx.item()], float(conf.item())
+
+
+def process_video_classification(
+    source,
+    mode: str,
+    model_bundle: dict | None,
+    phase_label: str,
+) -> tuple[bool, int]:
+    """
+    Procesa vídeo/webcam con un modelo de CLASIFICACIÓN.
+    En vez de bounding boxes, muestra la predicción como overlay de texto.
+    Devuelve (hubo_detecciones_cancer, total_frames_con_cancer).
+    """
+    cap = cv2.VideoCapture(source)
+    if not cap.isOpened():
+        print(f"  ✗ No se pudo abrir la fuente: {source}")
+        return False, 0
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if mode == "Video" else 0
+    src_fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    print(f"  Resolución: {width}x{height}")
+    if total_frames > 0:
+        print(f"  Frames: {total_frames} | FPS fuente: {src_fps:.1f}")
+
+    window_name = f"{phase_label} - {mode}"
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(window_name, min(width, 1280), min(height, 720))
+
+    frame_count = 0
+    total_cancer = 0
+    paused = False
+    prev_time = time.time()
+    fps_display = 0.0
+    last_frame = None
+
+    print("  ▸ Procesando... (pulsa 'q' para finalizar fase)")
+
+    while True:
+        if not paused:
+            ret, frame = cap.read()
+            if not ret:
+                if mode == "Video":
+                    break
+                else:
+                    continue
+
+            frame_count += 1
+            if FRAME_SKIP > 1 and frame_count % FRAME_SKIP != 0:
+                continue
+
+            # Clasificación
+            if model_bundle is not None:
+                cls_name, confidence = run_classification_inference(model_bundle, frame)
+                is_cancer = (cls_name == "colon_aca")
+            else:
+                # Modo demo
+                cls_name = "DEMO"
+                confidence = 0.0
+                is_cancer = False
+
+            if is_cancer and confidence >= CONFIDENCE_THRESHOLD:
+                total_cancer += 1
+
+            # Dibujar resultado de clasificación en el frame
+            if is_cancer:
+                label = f"CANCER: {confidence:.0%}"
+                color = (0, 0, 255)  # Rojo
+                # Borde rojo alrededor del frame
+                cv2.rectangle(frame, (5, 5), (width - 5, height - 5), (0, 0, 255), 4)
+            else:
+                label = f"NORMAL: {confidence:.0%}"
+                color = (0, 255, 0)  # Verde
+
+            # Fondo semitransparente para el texto
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (0, 0), (400, 50), (0, 0, 0), -1)
+            cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+            cv2.putText(
+                frame, label, (10, 35),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3, cv2.LINE_AA,
+            )
+
+            # FPS
+            now = time.time()
+            dt = now - prev_time
+            if dt > 0:
+                fps_display = 0.7 * fps_display + 0.3 * (1.0 / dt)
+            prev_time = now
+
+            # HUD
+            frame = draw_hud(
+                frame,
+                fps=fps_display,
+                frame_num=frame_count,
+                total_frames=total_frames,
+                phase_label=phase_label,
+                detections_count=1 if (is_cancer and confidence >= CONFIDENCE_THRESHOLD) else 0,
+                model_loaded=model_bundle is not None,
+                total_positives=total_cancer,
+            )
+
+            last_frame = frame.copy()
+            cv2.imshow(window_name, frame)
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
+            break
+        elif key == ord("s") and last_frame is not None:
+            path = save_screenshot(last_frame, prefix="cancer")
+            print(f"    📸 Screenshot: {path}")
+        elif key == ord("p"):
+            paused = not paused
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+    print(f"  Frames procesados: {frame_count}")
+    print(f"  Frames con cáncer: {total_cancer}")
+
+    return total_cancer > 0, total_cancer
 
 
 # ══════════════════════════════════════════════
@@ -894,7 +1140,9 @@ def main() -> None:
     print("▸ Cargando modelos...")
     history_model = load_history_model(MODEL_HISTORY)
     colonoscopy_model = load_yolo_model(MODEL_COLONOSCOPY, "Colonoscopia")
-    microscopy_model = load_yolo_model(MODEL_MICROSCOPY, "Microscopio")
+    microscopy_model = load_classification_model(
+        MODEL_MICROSCOPY, MODEL_MICROSCOPY_META, "Microscopio",
+    )
     print()
 
     # ── Bucle principal (permite reiniciar) ──
@@ -985,10 +1233,9 @@ def main() -> None:
             mode = "Video" if act == "video" else "Webcam"
             print(f"  Modo: {mode}")
 
-            has_det, count = process_video_phase(
+            has_det, count = process_video_classification(
                 source, mode, microscopy_model,
                 phase_label="Fase 3: Microscopio",
-                phase_color="cancer",
             )
 
             act = show_video_result(

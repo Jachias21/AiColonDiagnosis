@@ -26,3 +26,8 @@ build/
 # OS
 Thumbs.db
 .DS_Store
+
+# Modelos y artefactos pesados
+*.pt
+train_models/model_microscopio/resultados/**/best.pt
+train_models/model_colonoscopia/entrenamiento/weights/

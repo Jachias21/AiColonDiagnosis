@@ -1,0 +1,10 @@
+{
+  "architecture": "DenseNet-121",
+  "build_fn": "densenet121",
+  "class_names": [
+    "colon_aca",
+    "colon_n"
+  ],
+  "image_size": 224,
+  "test_accuracy": 0.99733
+}

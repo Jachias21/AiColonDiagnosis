@@ -25,12 +25,18 @@ from __future__ import annotations
 
 import csv
 import json
+import sys
 import time
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import Any, Optional
+
+# Forzar UTF-8 en stdout/stderr para Windows
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import cv2
 import numpy as np

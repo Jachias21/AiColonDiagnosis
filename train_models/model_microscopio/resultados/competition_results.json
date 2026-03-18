@@ -1,0 +1,32 @@
+{
+  "competition": {
+    "task": "Clasificación binaria: cáncer de colon (histopatología)",
+    "dataset": "C:\\Programas\\Proyecto2\\AiColonDiagnosis\\data\\dataset_colon",
+    "epochs": 20,
+    "batch_size": 32,
+    "learning_rate": 0.001,
+    "image_size": 224
+  },
+  "ranking": [
+    {
+      "rank": 1,
+      "name": "DenseNet-121",
+      "description": "Reutiliza features entre capas (8.0M params)",
+      "test_accuracy": 0.99733,
+      "test_f1": 0.99734,
+      "test_precision": 0.99601,
+      "test_recall": 0.99867,
+      "test_loss": 0.01303,
+      "confusion_matrix": {
+        "tp": 749,
+        "fp": 3,
+        "fn": 1,
+        "tn": 747
+      },
+      "best_val_accuracy": 0.996,
+      "best_epoch": 10,
+      "train_time_seconds": 1616.2
+    }
+  ],
+  "winner": "DenseNet-121"
+}

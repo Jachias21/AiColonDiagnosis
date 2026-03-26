@@ -6,7 +6,7 @@ Sistema de diagnóstico de cáncer de colon basado en inteligencia artificial, c
 |------|-------------|--------|
 | **1 — Historial médico** | Carga datos clínicos del paciente (CSV/JSON) y predice riesgo de cáncer | `history_model.pkl` (sklearn) |
 | **2 — Colonoscopia** | Analiza vídeo/webcam en tiempo real para detectar pólipos | `colonoscopy.pt` (YOLOv8) |
-| **3 — Microscopio** | Analiza vídeo/webcam de tejido para detectar células cancerígenas | `microscopy.pt` (YOLOv8) |
+| **3 — Foto histológica** | Analiza una imagen de tejido y clasifica si la muestra es maligna o no | `microscopy.pt` (clasificación) |
 
 El flujo completo va Fase 1 → 2 → 3 → Resultado final. Si una fase es negativa, el flujo se detiene.
 Desde el menú principal también se puede **acceder directamente a cualquier fase individual** para probar un modelo sin pasar por las anteriores.
@@ -86,7 +86,7 @@ Se abrirá una interfaz gráfica (tkinter) con el menú principal:
 - **▶ Diagnóstico completo** — Flujo secuencial: Fase 1 → 2 → 3 → Resultado
 - **📋 Historial** — Ir directamente a Fase 1
 - **📹 Colonoscopia** — Ir directamente a Fase 2 (detección de pólipos en vídeo)
-- **🔬 Microscopio** — Ir directamente a Fase 3
+- **🔬 Foto histológica** — Ir directamente a Fase 3
 
 **Controles durante las fases de vídeo:**
 
@@ -95,6 +95,8 @@ Se abrirá una interfaz gráfica (tkinter) con el menú principal:
 | `q` | Finalizar la fase actual |
 | `s` | Capturar screenshot |
 | `p` | Pausar / reanudar |
+
+En la **Fase 3** ya no se usa vídeo ni webcam: se selecciona una sola imagen y la app devuelve si la muestra es **maligna** o **no maligna**.
 
 Los screenshots se guardan en `screenshots/`.
 

@@ -5,7 +5,7 @@ Sistema de diagnóstico de cáncer de colon en 3 fases:
 
   Fase 1 → Historial médico: carga CSV/JSON, modelo predice riesgo de cáncer.
   Fase 2 → Colonoscopia:     vídeo/webcam, modelo detecta pólipos.
-  Fase 3 → Microscopio:      vídeo de tejido, modelo detecta si es cancerígeno.
+  Fase 3 → Foto histológica: imagen de tejido, modelo clasifica malignidad.
 
 Flujo:
   Inicio → Fase 1 → (positivo?) → Fase 2 → (pólipos?) → Fase 3 → Resultado
@@ -672,6 +672,77 @@ def process_video_classification(
     return total_cancer > 0, total_cancer
 
 
+def process_image_classification(
+    image_path: str,
+    model_bundle: dict | None,
+    phase_label: str,
+) -> tuple[bool, float, str]:
+    """
+    Procesa una sola imagen con un modelo de clasificación.
+    Devuelve (es_maligno, confianza, nombre_clase).
+    """
+    frame = cv2.imread(image_path)
+    if frame is None:
+        print(f"  ✗ No se pudo abrir la imagen: {image_path}")
+        return False, 0.0, "ERROR"
+
+    print(f"  Imagen cargada: {Path(image_path).name}")
+    print(f"  Resolución: {frame.shape[1]}x{frame.shape[0]}")
+
+    if model_bundle is not None:
+        cls_name, confidence = run_classification_inference(model_bundle, frame)
+        is_cancer = cls_name == "colon_aca"
+    else:
+        cls_name = "DEMO"
+        confidence = 0.0
+        is_cancer = False
+
+    display = frame.copy()
+    border_color = (0, 0, 255) if is_cancer else (0, 255, 0)
+    status_text = "MALIGNO" if is_cancer else "NO MALIGNO"
+    detail_text = f"{status_text}: {confidence:.1%}"
+
+    cv2.rectangle(
+        display,
+        (5, 5),
+        (display.shape[1] - 5, display.shape[0] - 5),
+        border_color,
+        4,
+    )
+    overlay = display.copy()
+    cv2.rectangle(overlay, (0, 0), (520, 70), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.6, display, 0.4, 0, display)
+    cv2.putText(
+        display,
+        phase_label,
+        (12, 26),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        TEXT_COLOR,
+        2,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        display,
+        detail_text,
+        (12, 56),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.9,
+        border_color,
+        2,
+        cv2.LINE_AA,
+    )
+
+    window_name = f"{phase_label} - Imagen"
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.imshow(window_name, display)
+    cv2.waitKey(0)
+    cv2.destroyWindow(window_name)
+
+    print(f"  Resultado: {status_text} ({confidence:.2%})")
+    return is_cancer and confidence >= CONFIDENCE_THRESHOLD, confidence, cls_name
+
+
 # ══════════════════════════════════════════════
 # GUI – VENTANAS POR FASE
 # ══════════════════════════════════════════════
@@ -739,7 +810,7 @@ def show_main_menu() -> str:
     phases = [
         ("Fase 1", "Historial médico del paciente", ACCENT_YELLOW),
         ("Fase 2", "Colonoscopia — detección de pólipos", ACCENT_GREEN),
-        ("Fase 3", "Microscopio — análisis de tejido", ACCENT_RED),
+        ("Fase 3", "Foto histológica — clasificación de malignidad", ACCENT_RED),
     ]
     for name, desc, color in phases:
         row = tk.Frame(info_frame, bg=BG_CARD)
@@ -786,7 +857,7 @@ def show_main_menu() -> str:
     phase_btns = [
         ("📋 Historial", ACCENT_YELLOW, "phase1"),
         ("📹 Colonoscopia", ACCENT_GREEN, "phase2"),
-        ("🔬 Microscopio", ACCENT_MAUVE, "phase3"),
+        ("🔬 Foto histológica", ACCENT_MAUVE, "phase3"),
     ]
     for text, color, phase_key in phase_btns:
         tk.Button(
@@ -994,6 +1065,55 @@ def show_video_menu(
     return result["action"], result.get("path")
 
 
+def show_image_menu(
+    phase_num: int, phase_title: str, color: str
+) -> tuple[str, Optional[str]]:
+    """
+    Menú para seleccionar una imagen estática.
+    Devuelve ('image', path) o ('exit', None).
+    """
+    result: dict = {"action": "exit", "path": None}
+
+    root = tk.Tk()
+    root.title(f"Fase {phase_num} — {phase_title}")
+    root.configure(bg=BG_DARK)
+    root.resizable(False, False)
+
+    tk.Label(
+        root, text=f"🔬  Fase {phase_num}: {phase_title}",
+        font=("Segoe UI", 18, "bold"), fg=color, bg=BG_DARK,
+    ).pack(pady=(25, 5))
+
+    tk.Label(
+        root, text="Selecciona la imagen que quieres analizar",
+        font=("Segoe UI", 11), fg=FG_SUB, bg=BG_DARK,
+    ).pack(pady=(0, 20))
+
+    def on_image():
+        filepath = filedialog.askopenfilename(
+            title=f"Seleccionar imagen — {phase_title}",
+            filetypes=[
+                ("Imágenes", "*.png *.jpg *.jpeg *.bmp *.tif *.tiff"),
+                ("Todos", "*.*"),
+            ],
+        )
+        if filepath:
+            result["action"] = "image"
+            result["path"] = filepath
+            root.destroy()
+
+    def on_back():
+        result["action"] = "exit"
+        root.destroy()
+
+    _make_button(root, "🖼  Subir Imagen", color, on_image).pack(pady=(0, 10))
+    _back_button(root, on_back).pack(pady=(5, 20))
+
+    _center_window(root, 500, 290)
+    root.mainloop()
+    return result["action"], result.get("path")
+
+
 # ── Resultado de fase de vídeo ──────────────
 
 def show_video_result(
@@ -1059,6 +1179,74 @@ def show_video_result(
     return result["action"]
 
 
+def show_classification_result(
+    phase_num: int,
+    phase_title: str,
+    is_malignant: bool,
+    confidence: float,
+    class_name: str,
+    has_next_phase: bool,
+) -> str:
+    """
+    Resultado tras clasificar una sola imagen.
+    Devuelve 'next' o 'restart'.
+    """
+    result = {"action": "restart"}
+
+    root = tk.Tk()
+    root.title(f"Fase {phase_num} — Resultado")
+    root.configure(bg=BG_DARK)
+    root.resizable(False, False)
+
+    tk.Label(
+        root, text=f"Fase {phase_num}: {phase_title}",
+        font=("Segoe UI", 16, "bold"), fg=FG_TEXT, bg=BG_DARK,
+    ).pack(pady=(25, 10))
+
+    if is_malignant:
+        color = ACCENT_RED
+        text = "⚠️  MUESTRA MALIGNA"
+        subtext = f"El modelo detecta malignidad con confianza {confidence:.1%}"
+    else:
+        color = ACCENT_GREEN
+        text = "✅  MUESTRA NO MALIGNA"
+        subtext = (
+            f"El modelo la clasifica como no maligna con confianza {confidence:.1%}"
+        )
+
+    tk.Label(
+        root, text=text,
+        font=("Segoe UI", 13, "bold"), fg=color, bg=BG_DARK,
+    ).pack(pady=(10, 3))
+    tk.Label(
+        root, text=subtext,
+        font=("Segoe UI", 10), fg=FG_SUB, bg=BG_DARK,
+    ).pack(pady=(0, 10))
+    tk.Label(
+        root, text=f"Clase predicha: {class_name}",
+        font=("Segoe UI", 10, "bold"), fg=FG_TEXT, bg=BG_DARK,
+    ).pack(pady=(0, 20))
+
+    def on_next():
+        result["action"] = "next"
+        root.destroy()
+
+    def on_restart():
+        result["action"] = "restart"
+        root.destroy()
+
+    if has_next_phase:
+        _make_button(root, "▶  Ver resultado final", ACCENT_MAUVE, on_next).pack(
+            pady=(0, 8)
+        )
+
+    _back_button(root, on_restart).pack(pady=(0, 20))
+
+    _center_window(root, 520, 340)
+    root.mainloop()
+    return result["action"]
+
+
 # ── Resultado final ─────────────────────────
 
 def show_final_result(
@@ -1088,8 +1276,8 @@ def show_final_result(
         ("Fase 2 — Colonoscopia:",
          f"{phase2_positives} frames con pólipos",
          ACCENT_RED if phase2_positives > 0 else ACCENT_GREEN),
-        ("Fase 3 — Microscopio:",
-         f"{phase3_positives} frames cancerígenos",
+        ("Fase 3 — Foto histológica:",
+         "Muestra maligna" if phase3_positives > 0 else "Muestra no maligna",
          ACCENT_RED if phase3_positives > 0 else ACCENT_GREEN),
     ]
     for label, value, color in rows:
@@ -1229,31 +1417,28 @@ def main() -> None:
             print("  FASE 3: ANÁLISIS MICROSCÓPICO")
             print("─" * 55)
 
-            act, video_path = show_video_menu(
+            act, image_path = show_image_menu(
                 3, "Análisis Microscópico", ACCENT_MAUVE
             )
             if act == "exit":
                 return False, 0
 
-            source = video_path if act == "video" else WEBCAM_INDEX
-            mode = "Video" if act == "video" else "Webcam"
-            print(f"  Modo: {mode}")
-
-            has_det, count = process_video_classification(
-                source, mode, microscopy_model,
-                phase_label="Fase 3: Microscopio",
+            has_det, confidence, class_name = process_image_classification(
+                image_path, microscopy_model,
+                phase_label="Fase 3: Foto histológica",
             )
 
-            act = show_video_result(
+            act = show_classification_result(
                 phase_num=3,
                 phase_title="Análisis Microscópico",
-                has_detections=has_det,
-                total_positives=count,
+                is_malignant=has_det,
+                confidence=confidence,
+                class_name=class_name,
                 has_next_phase=True,
             )
             if act == "next":
-                return True, count
-            return False, count
+                return True, 1 if has_det else 0
+            return False, 1 if has_det else 0
 
         # ───────────────────────────────────────────
         # Ejecutar según la acción del menú principal
@@ -1277,7 +1462,10 @@ def main() -> None:
                 print("═" * 55)
                 print(f"  Fase 1 — Historial:    {status}")
                 print(f"  Fase 2 — Colonoscopia: {polyp_count} detecciones")
-                print(f"  Fase 3 — Microscopio:  {cancer_count} detecciones")
+                print(
+                    "  Fase 3 — Foto histológica:  "
+                    + ("muestra maligna" if cancer_count > 0 else "muestra no maligna")
+                )
                 print("═" * 55)
 
                 show_final_result(
@@ -1295,7 +1483,7 @@ def main() -> None:
             run_phase2()
 
         elif action == "phase3":
-            # ══ SOLO FASE 3: Microscopio ══
+            # ══ SOLO FASE 3: Foto histológica ══
             run_phase3()
 
         # Vuelve al menú principal automáticamente

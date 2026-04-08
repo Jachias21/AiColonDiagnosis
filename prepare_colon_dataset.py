@@ -137,7 +137,7 @@ def main() -> None:
     print(f"  Dataset origen:  {dataset_dir}")
     print(f"  Dataset destino: {output_dir}")
     print(f"  Clases:          {', '.join(CLASSES)}")
-    print(f"  ─────────────────────────────────")
+    print("  ─────────────────────────────────")
     for split_name, count in counters.items():
         print(f"  {split_name:>5s}: {count}")
     print(f"  Total copiadas:  {total_copied}")

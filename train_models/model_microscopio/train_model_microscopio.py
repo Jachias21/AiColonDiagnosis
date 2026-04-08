@@ -488,7 +488,7 @@ def train_model(
     """
     result = TrainResult(name=config.name, description=config.description)
 
-    print(f"\n  Construyendo modelo...")
+    print("\n  Construyendo modelo...")
     model = build_model(config, num_classes=len(CLASS_NAMES), device=device)
 
     # Contar parámetros entrenables vs totales
@@ -576,7 +576,7 @@ def train_model(
     print(f"  Test precision: {t['precision']:.4f}")
     print(f"  Test recall:    {t['recall']:.4f}  (sensibilidad — detectar cánceres)")
     print(f"  Test F1:        {t['f1']:.4f}")
-    print(f"  Matriz de confusión (clase positiva = cáncer):")
+    print("  Matriz de confusión (clase positiva = cáncer):")
     print(f"    TP={t['tp']:>4}  FP={t['fp']:>4}")
     print(f"    FN={t['fn']:>4}  TN={t['tn']:>4}")
     if t['fn'] > 0:
@@ -627,7 +627,7 @@ def print_ranking(results: list[TrainResult]) -> TrainResult:
     print(f"  🏆 GANADOR: {w.name} — Acc: {w.test_acc:.2%} | Recall: {w.test_recall:.2%} | FN: {w.test_fn}")
     if w.test_fn > 0:
         print(f"     ⚠ El mejor modelo tiene {w.test_fn} falso(s) negativo(s) en test")
-        print(f"       (cánceres que el modelo clasificó como normales)")
+        print("       (cánceres que el modelo clasificó como normales)")
     print("═" * 80)
 
     return ranked[0]

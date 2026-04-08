@@ -1,183 +1,124 @@
-# 🏥 AiColonDiagnosis
+# AiColonDiagnosis
 
-Sistema de diagnóstico de cáncer de colon basado en inteligencia artificial, con un flujo de 3 fases:
+Proyecto de diagnóstico asistido por IA para cáncer de colon con 3 fases:
 
-| Fase | Descripción | Modelo |
-|------|-------------|--------|
-| **1 — Historial médico** | Carga datos clínicos del paciente (CSV/JSON) y predice riesgo de cáncer | `history_model.pkl` (sklearn) |
-| **2 — Colonoscopia** | Analiza vídeo/webcam en tiempo real para detectar pólipos | `colonoscopy.pt` (YOLOv8) |
-| **3 — Foto histológica** | Analiza una imagen de tejido y clasifica si la muestra es maligna o no | `microscopy.pt` (clasificación) |
+1. Historial médico
+2. Colonoscopia
+3. Imagen histológica
 
-El flujo completo va Fase 1 → 2 → 3 → Resultado final. Si una fase es negativa, el flujo se detiene.
-Desde el menú principal también se puede **acceder directamente a cualquier fase individual** para probar un modelo sin pasar por las anteriores.
+## Estado actual del proyecto
 
----
+Esto es lo que ya está montado en este repo y sí merece la pena ejecutar ahora mismo:
 
-## Requisitos previos
+- La app principal `detect_realtime.py` está lista para abrirse.
+- La Fase 2 tiene modelo real cargable: `models/colonoscopy.pt`.
+- La Fase 3 tiene modelo real cargable: `models/microscopy.pt` + `models/microscopy_meta.json`.
+- La Fase 1 no tiene todavía `models/history_model.pkl`, así que funciona en modo demo.
+- Ya existen los datasets generados en `data/dataset_yolo/` y `data/dataset_colon/`.
+- Ya existen resultados de entrenamiento de colonoscopia en `train_models/model_colonoscopia/entrenamiento/`.
 
-- **Python 3.12** o superior
-- **uv** — gestor de paquetes ([instalar uv](https://docs.astral.sh/uv/getting-started/installation/))
-- **GPU NVIDIA** con CUDA (recomendado para entrenamiento e inferencia en tiempo real)
-  - El proyecto está configurado para PyTorch con CUDA 12.4 en Windows
+## Cómo ejecutarlo ahora mismo
 
----
+Todos los comandos de abajo están pensados para ejecutarse desde la carpeta del proyecto:
 
-## Instalación
+```powershell
+cd C:\Programas\Proyecto2\AiColonDiagnosis
+```
 
-```bash
-# 1. Clonar el repositorio
-git clone <url-del-repo>
-cd AiColonDiagnosis
+### Opción recomendada: usar el entorno ya creado
 
-# 2. Instalar dependencias (uv crea el entorno virtual automáticamente)
+Este repo ya tiene `.venv`, así que puedes arrancarlo directamente sin reinstalar nada:
+
+### 1. App principal de diagnóstico
+
+```powershell
+.\.venv\Scripts\python.exe .\detect_realtime.py
+```
+
+Qué te vas a encontrar:
+
+- Menú principal con acceso al flujo completo o a cada fase por separado.
+- Fase 1: carga de datos clínicos en modo demo.
+- Fase 2: detección de pólipos con el modelo real `colonoscopy.pt`.
+- Fase 3: clasificación de imagen histológica con el modelo real `microscopy.pt`.
+
+Notas rápidas:
+
+- En la Fase 2 puedes usar webcam o vídeo, según el flujo de la app.
+- En la Fase 3 se analiza una imagen única.
+- Los screenshots se guardan en `screenshots/`.
+
+Controles de vídeo:
+
+- `q`: salir de la fase actual
+- `s`: guardar screenshot
+- `p`: pausar o reanudar
+
+### 2. Dashboard web
+
+```powershell
+.\.venv\Scripts\python.exe -m streamlit run .\dashboard.py
+```
+
+Después abre en el navegador la URL que te muestre Streamlit, normalmente:
+
+```text
+http://localhost:8501
+```
+
+Lo más útil del dashboard ahora mismo:
+
+- Ver métricas del entrenamiento de colonoscopia ya guardado.
+- Lanzar entrenamiento YOLO de colonoscopia usando el dataset ya preparado.
+- Probar inferencia sobre modelos YOLO de colonoscopia.
+
+Importante:
+
+- El dashboard está orientado sobre todo al flujo YOLO de colonoscopia.
+- La inferencia de microscopía que ya funciona de verdad está integrada en `detect_realtime.py`.
+
+## Si prefieres usar `uv`
+
+Si en tu máquina quieres reconstruir el entorno desde cero:
+
+```powershell
 uv sync
+uv run python .\detect_realtime.py
+uv run streamlit run .\dashboard.py
 ```
 
-Esto instalará todas las dependencias definidas en `pyproject.toml`:
+## Qué no hace falta ejecutar ahora
 
-| Paquete | Uso |
-|---------|-----|
-| `numpy` | Operaciones numéricas |
-| `opencv-python` | Procesamiento de vídeo y GUI de detección |
-| `pillow` | Manipulación de imágenes |
-| `ultralytics` | YOLOv8 para detección de objetos |
-| `torch` + `torchvision` | Backend de deep learning (CUDA 12.4 en Windows) |
-| `streamlit` | Dashboard web para probar modelos, ver métricas y entrenar |
-| `plotly` | Gráficas interactivas en el dashboard |
-| `pandas` | Manejo de datos tabulares |
+No necesitas preparar datasets otra vez para probar el proyecto actual, porque ya existen:
 
----
+- `data/dataset_yolo/`
+- `data/dataset_colon/`
 
-## Modelos
+Por eso estos scripts no son necesarios para arrancar lo que ya funciona:
 
-La aplicación espera los modelos entrenados dentro de `models/` en la raíz del proyecto.
-
-### Estructura esperada
-
-```
-models/
-├── history_model.pkl      ← Modelo de historial clínico (sklearn)
-├── colonoscopy.pt         ← Modelo YOLO para pólipos
-└── microscopy.pt          ← Modelo YOLO para tejido cancerígeno
+```powershell
+python .\prepare_dataset.py
+python .\prepare_colon_dataset.py
 ```
 
-### Cómo obtener cada modelo
+Úsalos solo si quieres regenerar los datasets.
 
-| Archivo | Formato | Cómo generarlo |
-|---------|---------|----------------|
-| `history_model.pkl` | Pickle (sklearn) | Entrenar un clasificador con datos clínicos y guardarlo con `pickle.dump()` |
-| `colonoscopy.pt` | YOLOv8 `.pt` | Entrenar con el script `train_models/model_colonoscopia/` o desde el dashboard |
-| `microscopy.pt` | YOLOv8 `.pt` | Entrenar con dataset de microscopía |
+## Archivos importantes
 
-> **Nota:** Si los modelos no están presentes, la app funciona en **modo demo** (siempre pasa a la siguiente fase) para probar la interfaz sin modelos entrenados.
+- `detect_realtime.py`: app principal
+- `dashboard.py`: panel Streamlit
+- `main.py`: archivo de ejemplo, no es la entrada real del proyecto
+- `models/colonoscopy.pt`: modelo de colonoscopia
+- `models/microscopy.pt`: modelo de microscopía
+- `models/microscopy_meta.json`: metadata necesaria para cargar el modelo de microscopía
+- `train_models/model_colonoscopia/entrenamiento/`: métricas y pesos ya generados
 
----
+## Limitación actual
 
-## Uso
+Falta el archivo:
 
-### 1. Aplicación de diagnóstico (3 fases)
-
-```bash
-uv run python detect_realtime.py
+```text
+models/history_model.pkl
 ```
 
-Se abrirá una interfaz gráfica (tkinter) con el menú principal:
-
-- **▶ Diagnóstico completo** — Flujo secuencial: Fase 1 → 2 → 3 → Resultado
-- **📋 Historial** — Ir directamente a Fase 1
-- **📹 Colonoscopia** — Ir directamente a Fase 2 (detección de pólipos en vídeo)
-- **🔬 Foto histológica** — Ir directamente a Fase 3
-
-**Controles durante las fases de vídeo:**
-
-| Tecla | Acción |
-|-------|--------|
-| `q` | Finalizar la fase actual |
-| `s` | Capturar screenshot |
-| `p` | Pausar / reanudar |
-
-En la **Fase 3** ya no se usa vídeo ni webcam: se selecciona una sola imagen y la app devuelve si la muestra es **maligna** o **no maligna**.
-
-Los screenshots se guardan en `screenshots/`.
-
-### 2. Dashboard web (Streamlit)
-
-```bash
-uv run streamlit run dashboard.py
-```
-
-El dashboard tiene 3 páginas:
-
-| Página | Función |
-|--------|---------|
-| **🔬 Probar modelo** | Subir una imagen o elegir del dataset, ejecutar inferencia y ver detecciones con bounding boxes |
-| **📊 Métricas** | Visualizar curvas de pérdida, mAP, precisión/recall y matriz de confusión del entrenamiento |
-| **🏋️ Entrenar modelo** | Configurar hiperparámetros (época, batch, lr, augmentation...) y lanzar entrenamiento |
-
-### 3. Preparar datasets
-
-```bash
-# Dataset YOLO para colonoscopia (Kvasir-SEG + normales → 1000 pos + 1000 neg)
-uv run python prepare_dataset.py
-
-# Dataset clasificación colon (colon_aca + colon_n → train/val/test)
-uv run python prepare_colon_dataset.py
-```
-
-Los datasets se generan en `data/dataset_yolo/` y `data/dataset_colon/` respectivamente.
-
-### 4. Entrenar modelo de colonoscopia (script directo)
-
-```bash
-uv run python train_models/model_colonoscopia/train_model_colonoscopia.py
-```
-
-También se puede entrenar desde el dashboard (página "🏋️ Entrenar modelo").
-
----
-
-## Estructura del proyecto
-
-```
-AiColonDiagnosis/
-├── detect_realtime.py                          # App principal — diagnóstico en 3 fases con GUI
-├── dashboard.py                                # Dashboard Streamlit (probar/métricas/entrenar)
-├── prepare_dataset.py                          # Preparar dataset YOLO desde Kvasir
-├── prepare_colon_dataset.py                    # Preparar dataset clasificación colon
-├── main.py                                     # Entrada alternativa
-├── pyproject.toml                              # Dependencias y configuración del proyecto
-├── models/                                     # Modelos entrenados
-│   ├── history_model.pkl
-│   ├── colonoscopy.pt
-│   └── microscopy.pt
-├── train_models/                               # Scripts y resultados de entrenamiento
-│   ├── model_colonoscopia/
-│   │   ├── train_model_colonoscopia.py         # Script de entrenamiento con comentarios
-│   │   └── entrenamiento/                      # Resultados (results.csv, weights/, gráficas)
-│   ├── model_historial/
-│   └── model_microscopio/
-├── data/                                       # Datos originales (no incluidos en git)
-│   ├── colon_image_sets/                       # Imágenes de clasificación
-│   ├── colonoscopia/                           # Datasets Kvasir
-│   ├── dataset_yolo/                           # Generado por prepare_dataset.py
-│   └── dataset_colon/                          # Generado por prepare_colon_dataset.py
-└── screenshots/                                # Capturas durante detección en vídeo
-```
-
----
-
-## Datos
-
-Los datasets originales no se incluyen en el repositorio (ver `.gitignore`). Se necesitan:
-
-| Dataset | Carpeta | Uso |
-|---------|---------|-----|
-| **Kvasir-SEG** | `data/colonoscopia/kvasir-seg/` | Imágenes + máscaras + bboxes de pólipos |
-| **Kvasir Dataset v3** | `data/colonoscopia/kvasir-dataset-v3/` | Imágenes normales (cécum, píloro, z-line) |
-| **Colon Image Sets** | `data/colon_image_sets/` | `colon_aca` (adenocarcinoma) + `colon_n` (normal) |
-
----
-
-## Licencia
-
-Proyecto académico.
+Mientras no exista, la Fase 1 seguirá en modo demo y el flujo continuará hacia las fases siguientes.

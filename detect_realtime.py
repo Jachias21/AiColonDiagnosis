@@ -370,6 +370,7 @@ def draw_hud(
     detections_count: int,
     model_loaded: bool,
     total_positives: int = 0,
+    paused: bool = False,
 ) -> np.ndarray:
     """Dibuja el HUD con información de estado."""
     h, _w = frame.shape[:2]
@@ -384,6 +385,8 @@ def draw_hud(
         lines.append(f"Progreso: {progress:.0f}%")
     if not model_loaded:
         lines.append("MODO DEMO (sin modelo)")
+    if paused:
+        lines.append("Estado: PAUSADO")
 
     y_offset = 25
     for line in lines:
@@ -393,12 +396,129 @@ def draw_hud(
         )
         y_offset += 22
 
-    controls = "q:Finalizar fase | s:Screenshot | p:Pausa"
+    controls = "Controles: clic en botones | q salir | p pausa | s captura"
     cv2.putText(
         frame, controls, (10, h - 15),
         cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1, cv2.LINE_AA,
     )
     return frame
+
+
+def _get_screen_size() -> tuple[int, int]:
+    """Obtiene el tamaño de pantalla para centrar ventanas OpenCV."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+        except Exception:
+            pass
+
+    probe = tk.Tk()
+    probe.withdraw()
+    probe.update_idletasks()
+    size = (probe.winfo_screenwidth(), probe.winfo_screenheight())
+    probe.destroy()
+    return size
+
+
+def _center_cv_window(
+    window_name: str,
+    content_width: int,
+    content_height: int,
+    max_width: int = 1280,
+    max_height: int = 720,
+) -> tuple[int, int]:
+    """Redimensiona y centra una ventana OpenCV en pantalla."""
+    scale = min(
+        max_width / max(content_width, 1),
+        max_height / max(content_height, 1),
+        1.0,
+    )
+    view_w = max(int(content_width * scale), 640)
+    view_h = max(int(content_height * scale), 360)
+
+    screen_w, screen_h = _get_screen_size()
+    x = max((screen_w - view_w) // 2, 0)
+    y = max((screen_h - view_h) // 2, 0)
+
+    cv2.resizeWindow(window_name, view_w, view_h)
+    cv2.moveWindow(window_name, x, y)
+    return view_w, view_h
+
+
+def _draw_action_buttons(
+    frame: np.ndarray,
+    actions: list[tuple[str, str, tuple[int, int, int]]],
+    title: str = "Controles",
+) -> tuple[np.ndarray, dict[str, tuple[int, int, int, int]]]:
+    """Dibuja una botonera simple dentro de la ventana OpenCV."""
+    h, w = frame.shape[:2]
+    panel_w = 230
+    button_h = 40
+    gap = 10
+    pad = 14
+    title_h = 36
+    panel_h = title_h + (len(actions) * button_h) + ((len(actions) - 1) * gap) + pad * 2
+
+    x1 = max(w - panel_w - 16, 16)
+    y1 = 16
+    x2 = x1 + panel_w
+    y2 = min(y1 + panel_h, h - 16)
+
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (x1, y1), (x2, y2), (20, 20, 28), -1)
+    cv2.rectangle(overlay, (x1, y1), (x2, y2), (120, 120, 140), 1)
+    cv2.addWeighted(overlay, 0.72, frame, 0.28, 0, frame)
+
+    cv2.putText(
+        frame, title, (x1 + 12, y1 + 24),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.65, (240, 240, 245), 2, cv2.LINE_AA,
+    )
+
+    buttons: dict[str, tuple[int, int, int, int]] = {}
+    btn_y = y1 + title_h
+    for key, label, color in actions:
+        btn_x1 = x1 + pad
+        btn_y1 = btn_y
+        btn_x2 = x2 - pad
+        btn_y2 = btn_y1 + button_h
+        buttons[key] = (btn_x1, btn_y1, btn_x2, btn_y2)
+
+        cv2.rectangle(frame, (btn_x1, btn_y1), (btn_x2, btn_y2), color, -1)
+        cv2.rectangle(frame, (btn_x1, btn_y1), (btn_x2, btn_y2), (245, 245, 245), 1)
+        cv2.putText(
+            frame, label, (btn_x1 + 12, btn_y1 + 26),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.62, (18, 18, 25), 2, cv2.LINE_AA,
+        )
+        btn_y += button_h + gap
+
+    return frame, buttons
+
+
+def _set_mouse_buttons_handler(
+    window_name: str,
+    state: dict[str, Any],
+) -> None:
+    """Asigna un handler para capturar clicks sobre la botonera OpenCV."""
+
+    def _handler(event, x, y, _flags, _param):
+        if event != cv2.EVENT_LBUTTONUP:
+            return
+        for action, (x1, y1, x2, y2) in state.get("buttons", {}).items():
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                state["clicked"] = action
+                break
+
+    cv2.setMouseCallback(window_name, _handler)
+
+
+def _format_ratio(numerator: int, denominator: int) -> str:
+    """Formatea una razón como porcentaje legible."""
+    if denominator <= 0:
+        return "N/A"
+    return f"{(numerator / denominator) * 100:.1f}%"
 
 
 def save_screenshot(frame: np.ndarray, prefix: str = "screenshot") -> str:
@@ -417,15 +537,25 @@ def process_video_phase(
     model: Any,
     phase_label: str,
     phase_color: str = "polyp",
-) -> tuple[bool, int]:
+) -> tuple[bool, dict[str, Any]]:
     """
     Procesa vídeo/webcam con un modelo YOLO.
-    Devuelve (hubo_detecciones, total_frames_con_detección).
+    Devuelve (hubo_detecciones, métricas_de_fase).
     """
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
         print(f"  ✗ No se pudo abrir la fuente: {source}")
-        return False, 0
+        return False, {
+            "source_mode": mode,
+            "frames_processed": 0,
+            "positive_frames": 0,
+            "total_detections": 0,
+            "peak_detections": 0,
+            "avg_confidence": 0.0,
+            "max_confidence": 0.0,
+            "completion_ratio": None,
+            "end_reason": "error",
+        }
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if mode == "Video" else 0
     src_fps = cap.get(cv2.CAP_PROP_FPS) or 30
@@ -445,22 +575,35 @@ def process_video_phase(
 
     window_name = f"{phase_label} - {mode}"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(window_name, min(width, 1280), min(height, 720))
+    _center_cv_window(window_name, width, height)
 
     frame_count = 0
     total_positives = 0
+    total_detections = 0
+    peak_detections = 0
+    confidence_sum = 0.0
+    max_confidence = 0.0
     paused = False
     prev_time = time.time()
     fps_display = 0.0
     last_frame = None
+    last_visual_frame = None
+    end_reason = "completed"
+    ui_state: dict[str, Any] = {"buttons": {}, "clicked": None}
+    _set_mouse_buttons_handler(window_name, ui_state)
 
-    print("  ▸ Procesando... (pulsa 'q' para finalizar fase)")
+    print("  ▸ Procesando... (usa los botones o pulsa 'q' para finalizar fase)")
 
     while True:
+        if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+            end_reason = "window"
+            break
+
         if not paused:
             ret, frame = cap.read()
             if not ret:
                 if mode == "Video":
+                    end_reason = "completed"
                     break
                 else:
                     continue
@@ -473,8 +616,16 @@ def process_video_phase(
             detections: list[dict] = []
             if model is not None:
                 detections = run_inference(model, frame)
-            if detections:
+            detections_in_frame = len(detections)
+            if detections_in_frame:
                 total_positives += 1
+                total_detections += detections_in_frame
+                peak_detections = max(peak_detections, detections_in_frame)
+                confidence_sum += sum(det["confidence"] for det in detections)
+                max_confidence = max(
+                    max_confidence,
+                    max(det["confidence"] for det in detections),
+                )
 
             frame = draw_detections(frame, detections, phase_color)
 
@@ -494,33 +645,78 @@ def process_video_phase(
                 detections_count=len(detections),
                 model_loaded=model is not None,
                 total_positives=total_positives,
+                paused=paused,
             )
 
             if writer is not None:
                 writer.write(frame)
 
-            last_frame = frame.copy()
-            cv2.imshow(window_name, frame)
+            last_visual_frame = frame.copy()
+
+        if last_visual_frame is None:
+            key = cv2.waitKey(30) & 0xFF
+            if key == ord("q"):
+                end_reason = "keyboard"
+                break
+            continue
+
+        display_frame = last_visual_frame.copy()
+        actions = [
+            ("exit", "Finalizar", (70, 95, 220)),
+            ("pause", "Reanudar" if paused else "Pausar", (90, 170, 245)),
+            ("screenshot", "Captura", (170, 210, 120)),
+        ]
+        display_frame, buttons = _draw_action_buttons(
+            display_frame, actions, title="Acciones"
+        )
+        ui_state["buttons"] = buttons
+        last_frame = display_frame.copy()
+        cv2.imshow(window_name, display_frame)
 
         key = cv2.waitKey(1) & 0xFF
-        if key == ord("q"):
+        clicked = ui_state.pop("clicked", None)
+
+        if key == ord("q") or clicked == "exit":
+            end_reason = "button" if clicked == "exit" else "keyboard"
             break
-        elif key == ord("s") and last_frame is not None:
+        elif key == ord("s") or clicked == "screenshot":
+            if last_frame is None:
+                continue
             path = save_screenshot(last_frame, prefix=phase_color)
             print(f"    📸 Screenshot: {path}")
-        elif key == ord("p"):
+        elif key == ord("p") or clicked == "pause":
             paused = not paused
 
     cap.release()
     if writer is not None:
         writer.release()
-    cv2.destroyAllWindows()
+    try:
+        cv2.destroyWindow(window_name)
+    except cv2.error:
+        pass
 
     print(f"  Frames procesados: {frame_count}")
     print(f"  Frames con detección: {total_positives}")
 
     has_detections = total_positives > 0
-    return has_detections, total_positives
+    completion_ratio = (
+        min(frame_count / total_frames, 1.0) if total_frames > 0 else None
+    )
+    avg_confidence = (
+        confidence_sum / total_detections if total_detections > 0 else 0.0
+    )
+    stats = {
+        "source_mode": mode,
+        "frames_processed": frame_count,
+        "positive_frames": total_positives,
+        "total_detections": total_detections,
+        "peak_detections": peak_detections,
+        "avg_confidence": avg_confidence,
+        "max_confidence": max_confidence,
+        "completion_ratio": completion_ratio,
+        "end_reason": end_reason,
+    }
+    return has_detections, stats
 
 
 def run_classification_inference(
@@ -676,15 +872,22 @@ def process_image_classification(
     image_path: str,
     model_bundle: dict | None,
     phase_label: str,
-) -> tuple[bool, float, str]:
+) -> dict[str, Any]:
     """
     Procesa una sola imagen con un modelo de clasificación.
-    Devuelve (es_maligno, confianza, nombre_clase).
+    Devuelve métricas resumidas de la clasificación.
     """
     frame = cv2.imread(image_path)
     if frame is None:
         print(f"  ✗ No se pudo abrir la imagen: {image_path}")
-        return False, 0.0, "ERROR"
+        return {
+            "image_path": image_path,
+            "image_name": Path(image_path).name,
+            "is_malignant": False,
+            "confidence": 0.0,
+            "class_name": "ERROR",
+            "demo_mode": model_bundle is None,
+        }
 
     print(f"  Imagen cargada: {Path(image_path).name}")
     print(f"  Resolución: {frame.shape[1]}x{frame.shape[0]}")
@@ -735,12 +938,47 @@ def process_image_classification(
 
     window_name = f"{phase_label} - Imagen"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-    cv2.imshow(window_name, display)
-    cv2.waitKey(0)
-    cv2.destroyWindow(window_name)
+    _center_cv_window(window_name, display.shape[1], display.shape[0], max_height=760)
+
+    ui_state: dict[str, Any] = {"buttons": {}, "clicked": None}
+    _set_mouse_buttons_handler(window_name, ui_state)
+
+    while True:
+        if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+            break
+
+        frame_to_show = display.copy()
+        actions = [
+            ("continue", "Continuar", (90, 170, 245)),
+            ("exit", "Cerrar vista", (70, 95, 220)),
+        ]
+        frame_to_show, buttons = _draw_action_buttons(
+            frame_to_show, actions, title="Siguiente paso"
+        )
+        ui_state["buttons"] = buttons
+        cv2.imshow(window_name, frame_to_show)
+
+        key = cv2.waitKey(30) & 0xFF
+        clicked = ui_state.pop("clicked", None)
+        if key in (13, 27, ord("q"), ord(" ")):
+            break
+        if clicked in {"continue", "exit"}:
+            break
+
+    try:
+        cv2.destroyWindow(window_name)
+    except cv2.error:
+        pass
 
     print(f"  Resultado: {status_text} ({confidence:.2%})")
-    return is_cancer and confidence >= CONFIDENCE_THRESHOLD, confidence, cls_name
+    return {
+        "image_path": image_path,
+        "image_name": Path(image_path).name,
+        "is_malignant": is_cancer and confidence >= CONFIDENCE_THRESHOLD,
+        "confidence": confidence,
+        "class_name": cls_name,
+        "demo_mode": model_bundle is None,
+    }
 
 
 # ══════════════════════════════════════════════
@@ -753,6 +991,16 @@ def _center_window(win: tk.Tk | tk.Toplevel, w: int, h: int) -> None:
     x = (win.winfo_screenwidth() // 2) - (w // 2)
     y = (win.winfo_screenheight() // 2) - (h // 2)
     win.geometry(f"{w}x{h}+{x}+{y}")
+    win.lift()
+    try:
+        win.attributes("-topmost", True)
+        win.after(150, lambda: win.attributes("-topmost", False))
+    except tk.TclError:
+        pass
+    try:
+        win.focus_force()
+    except tk.TclError:
+        pass
 
 
 def _make_button(parent, text: str, color: str, command, **kwargs: Any) -> tk.Button:
@@ -777,6 +1025,20 @@ def _back_button(parent, command) -> tk.Button:
         activebackground="#6c7086", command=command,
         font=("Segoe UI", 10), width=32, height=1, relief="flat", cursor="hand2",
     )
+
+
+def _metric_row(parent, label: str, value: str, value_color: str = FG_TEXT) -> None:
+    """Añade una fila sencilla de métrica a una tarjeta tkinter."""
+    row = tk.Frame(parent, bg=BG_CARD)
+    row.pack(fill="x", pady=3)
+    tk.Label(
+        row, text=label, font=("Segoe UI", 10, "bold"),
+        fg=FG_SUB, bg=BG_CARD, anchor="w",
+    ).pack(side="left")
+    tk.Label(
+        row, text=value, font=("Segoe UI", 10, "bold"),
+        fg=value_color, bg=BG_CARD, anchor="e",
+    ).pack(side="right")
 
 
 # ── Pantalla principal ──────────────────────
@@ -906,6 +1168,7 @@ def show_phase1_menu() -> tuple[str, Optional[str]]:
 
     def on_load():
         filepath = filedialog.askopenfilename(
+            parent=root,
             title="Seleccionar historial del paciente",
             filetypes=[
                 ("Datos", "*.csv *.json"),
@@ -934,7 +1197,11 @@ def show_phase1_menu() -> tuple[str, Optional[str]]:
 # ── Resultado Fase 1 ────────────────────────
 
 def show_phase1_result(
-    patient_data: dict, is_positive: bool, probability: float
+    patient_data: dict,
+    is_positive: bool,
+    probability: float,
+    demo_mode: bool = False,
+    numeric_fields: int = 0,
 ) -> str:
     """
     Muestra el resultado de la Fase 1.
@@ -968,6 +1235,23 @@ def show_phase1_result(
             fg=FG_TEXT, bg=BG_CARD, anchor="w",
         ).pack(side="left")
 
+    analysis_frame = tk.Frame(root, bg=BG_CARD, padx=15, pady=12)
+    analysis_frame.pack(padx=25, pady=(8, 5), fill="x")
+    _metric_row(analysis_frame, "Campos cargados", str(len(patient_data)))
+    _metric_row(analysis_frame, "Campos numéricos usados", str(numeric_fields))
+    _metric_row(
+        analysis_frame,
+        "Probabilidad estimada",
+        f"{probability:.1%}",
+        ACCENT_RED if is_positive else ACCENT_GREEN,
+    )
+    _metric_row(
+        analysis_frame,
+        "Modo de ejecución",
+        "Demo (sin modelo clínico)" if demo_mode else "Modelo cargado",
+        ACCENT_YELLOW if demo_mode else ACCENT_GREEN,
+    )
+
     # Resultado positivo/negativo
     if is_positive:
         color = ACCENT_RED
@@ -988,6 +1272,15 @@ def show_phase1_result(
         font=("Segoe UI", 10), fg=FG_SUB, bg=BG_DARK,
     ).pack(pady=(0, 15))
 
+    if demo_mode:
+        tk.Label(
+            root,
+            text="Nota: esta fase avanzó en modo demo porque falta el modelo clínico.",
+            font=("Segoe UI", 9),
+            fg=ACCENT_YELLOW,
+            bg=BG_DARK,
+        ).pack(pady=(0, 12))
+
     def on_next():
         result["action"] = "next"
         root.destroy()
@@ -1003,7 +1296,7 @@ def show_phase1_result(
 
     _back_button(root, on_restart).pack(pady=(0, 15))
 
-    _center_window(root, 500, 480)
+    _center_window(root, 540, 620)
     root.mainloop()
     return result["action"]
 
@@ -1034,9 +1327,19 @@ def show_video_menu(
         root, text="Selecciona la fuente de entrada",
         font=("Segoe UI", 11), fg=FG_SUB, bg=BG_DARK,
     ).pack(pady=(0, 20))
+    tk.Label(
+        root,
+        text="Durante la fase verás botones visibles para finalizar, pausar y capturar.",
+        font=("Segoe UI", 9),
+        fg=FG_SUB,
+        bg=BG_DARK,
+        wraplength=360,
+        justify="center",
+    ).pack(pady=(0, 16))
 
     def on_video():
         filepath = filedialog.askopenfilename(
+            parent=root,
             title=f"Seleccionar vídeo — {phase_title}",
             filetypes=[
                 ("Vídeos", "*.mp4 *.avi *.mkv *.mov *.wmv"),
@@ -1060,7 +1363,7 @@ def show_video_menu(
     _make_button(root, "📷  Usar Webcam", ACCENT_BLUE, on_webcam).pack(pady=(0, 10))
     _back_button(root, on_back).pack(pady=(5, 20))
 
-    _center_window(root, 480, 340)
+    _center_window(root, 500, 390)
     root.mainloop()
     return result["action"], result.get("path")
 
@@ -1088,9 +1391,19 @@ def show_image_menu(
         root, text="Selecciona la imagen que quieres analizar",
         font=("Segoe UI", 11), fg=FG_SUB, bg=BG_DARK,
     ).pack(pady=(0, 20))
+    tk.Label(
+        root,
+        text="La vista de imagen también mostrará controles visibles para continuar o cerrarla.",
+        font=("Segoe UI", 9),
+        fg=FG_SUB,
+        bg=BG_DARK,
+        wraplength=380,
+        justify="center",
+    ).pack(pady=(0, 16))
 
     def on_image():
         filepath = filedialog.askopenfilename(
+            parent=root,
             title=f"Seleccionar imagen — {phase_title}",
             filetypes=[
                 ("Imágenes", "*.png *.jpg *.jpeg *.bmp *.tif *.tiff"),
@@ -1109,7 +1422,7 @@ def show_image_menu(
     _make_button(root, "🖼  Subir Imagen", color, on_image).pack(pady=(0, 10))
     _back_button(root, on_back).pack(pady=(5, 20))
 
-    _center_window(root, 500, 290)
+    _center_window(root, 520, 340)
     root.mainloop()
     return result["action"], result.get("path")
 
@@ -1119,8 +1432,7 @@ def show_image_menu(
 def show_video_result(
     phase_num: int,
     phase_title: str,
-    has_detections: bool,
-    total_positives: int,
+    stats: dict[str, Any],
     has_next_phase: bool,
 ) -> str:
     """
@@ -1139,14 +1451,15 @@ def show_video_result(
         font=("Segoe UI", 16, "bold"), fg=FG_TEXT, bg=BG_DARK,
     ).pack(pady=(25, 10))
 
+    has_detections = stats["positive_frames"] > 0
     if has_detections:
         color = ACCENT_RED
-        text = f"⚠️  DETECCIONES: {total_positives} frames"
-        subtext = "Se encontraron regiones sospechosas"
+        text = f"⚠️  HALLAZGOS EN {stats['positive_frames']} FRAMES"
+        subtext = "Se detectaron regiones sospechosas durante el análisis."
     else:
         color = ACCENT_GREEN
         text = "✅  SIN DETECCIONES"
-        subtext = "No se encontraron regiones sospechosas"
+        subtext = "No se encontraron regiones sospechosas en la fase analizada."
 
     tk.Label(
         root, text=text,
@@ -1156,6 +1469,43 @@ def show_video_result(
         root, text=subtext,
         font=("Segoe UI", 10), fg=FG_SUB, bg=BG_DARK,
     ).pack(pady=(0, 20))
+
+    metrics = tk.Frame(root, bg=BG_CARD, padx=18, pady=14)
+    metrics.pack(padx=25, pady=(0, 14), fill="x")
+    _metric_row(metrics, "Fuente", stats["source_mode"])
+    _metric_row(metrics, "Frames procesados", str(stats["frames_processed"]))
+    _metric_row(
+        metrics,
+        "Frames con pólipos",
+        f"{stats['positive_frames']} ({_format_ratio(stats['positive_frames'], stats['frames_processed'])})",
+        ACCENT_RED if has_detections else ACCENT_GREEN,
+    )
+    _metric_row(metrics, "Detecciones totales", str(stats["total_detections"]))
+    _metric_row(metrics, "Pico en un frame", str(stats["peak_detections"]))
+    _metric_row(metrics, "Confianza media", f"{stats['avg_confidence']:.1%}")
+    _metric_row(metrics, "Confianza máxima", f"{stats['max_confidence']:.1%}")
+
+    if stats["completion_ratio"] is not None:
+        _metric_row(
+            metrics,
+            "Vídeo revisado",
+            f"{stats['completion_ratio'] * 100:.1f}%",
+        )
+
+    ending_text = {
+        "button": "La fase se cerró desde el botón Finalizar.",
+        "keyboard": "La fase se cerró desde el teclado.",
+        "window": "La fase se cerró desde la propia ventana.",
+        "completed": "La fuente se analizó hasta el final.",
+        "error": "No se pudo completar el análisis.",
+    }.get(stats["end_reason"], "La fase terminó.")
+    tk.Label(
+        root,
+        text=ending_text,
+        font=("Segoe UI", 9),
+        fg=FG_SUB,
+        bg=BG_DARK,
+    ).pack(pady=(0, 14))
 
     def on_next():
         result["action"] = "next"
@@ -1174,7 +1524,7 @@ def show_video_result(
 
     _back_button(root, on_restart).pack(pady=(0, 20))
 
-    _center_window(root, 500, 320)
+    _center_window(root, 560, 510)
     root.mainloop()
     return result["action"]
 
@@ -1182,9 +1532,7 @@ def show_video_result(
 def show_classification_result(
     phase_num: int,
     phase_title: str,
-    is_malignant: bool,
-    confidence: float,
-    class_name: str,
+    result_data: dict[str, Any],
     has_next_phase: bool,
 ) -> str:
     """
@@ -1203,6 +1551,9 @@ def show_classification_result(
         font=("Segoe UI", 16, "bold"), fg=FG_TEXT, bg=BG_DARK,
     ).pack(pady=(25, 10))
 
+    is_malignant = result_data["is_malignant"]
+    confidence = result_data["confidence"]
+    class_name = result_data["class_name"]
     if is_malignant:
         color = ACCENT_RED
         text = "⚠️  MUESTRA MALIGNA"
@@ -1222,10 +1573,40 @@ def show_classification_result(
         root, text=subtext,
         font=("Segoe UI", 10), fg=FG_SUB, bg=BG_DARK,
     ).pack(pady=(0, 10))
+
+    metrics = tk.Frame(root, bg=BG_CARD, padx=18, pady=14)
+    metrics.pack(padx=25, pady=(0, 16), fill="x")
+    _metric_row(metrics, "Imagen analizada", result_data["image_name"])
+    _metric_row(metrics, "Clase predicha", class_name)
+    _metric_row(
+        metrics,
+        "Confianza del modelo",
+        f"{confidence:.1%}",
+        color,
+    )
+    _metric_row(
+        metrics,
+        "Interpretación",
+        "Maligna" if is_malignant else "No maligna",
+        color,
+    )
+    _metric_row(
+        metrics,
+        "Modo de ejecución",
+        "Demo (sin modelo)" if result_data["demo_mode"] else "Modelo cargado",
+        ACCENT_YELLOW if result_data["demo_mode"] else ACCENT_GREEN,
+    )
+
+    note = (
+        "La clasificación histológica apunta a malignidad y debe revisarse clínicamente."
+        if is_malignant
+        else "La imagen no fue clasificada como maligna en esta fase."
+    )
     tk.Label(
-        root, text=f"Clase predicha: {class_name}",
-        font=("Segoe UI", 10, "bold"), fg=FG_TEXT, bg=BG_DARK,
-    ).pack(pady=(0, 20))
+        root, text=note,
+        font=("Segoe UI", 9), fg=FG_SUB, bg=BG_DARK, wraplength=450,
+        justify="center",
+    ).pack(pady=(0, 14))
 
     def on_next():
         result["action"] = "next"
@@ -1242,7 +1623,7 @@ def show_classification_result(
 
     _back_button(root, on_restart).pack(pady=(0, 20))
 
-    _center_window(root, 520, 340)
+    _center_window(root, 560, 500)
     root.mainloop()
     return result["action"]
 
@@ -1250,9 +1631,9 @@ def show_classification_result(
 # ── Resultado final ─────────────────────────
 
 def show_final_result(
-    phase1_positive: bool,
-    phase2_positives: int,
-    phase3_positives: int,
+    phase1_result: dict[str, Any],
+    phase2_result: dict[str, Any],
+    phase3_result: dict[str, Any],
 ) -> None:
     """Pantalla de resultado final del diagnóstico completo."""
     root = tk.Tk()
@@ -1269,16 +1650,39 @@ def show_final_result(
     summary = tk.Frame(root, bg=BG_CARD, padx=20, pady=15)
     summary.pack(padx=30, pady=5, fill="x")
 
+    phase1_positive = phase1_result["is_positive"]
+    phase2_positive_frames = phase2_result["positive_frames"]
+    phase3_malignant = phase3_result["is_malignant"]
     rows = [
         ("Fase 1 — Historial:",
-         "Riesgo detectado" if phase1_positive else "Sin riesgo",
-         ACCENT_RED if phase1_positive else ACCENT_GREEN),
+         (
+             "No ejecutada"
+             if not phase1_result.get("executed") else
+             f"Riesgo detectado ({phase1_result['probability']:.1%})"
+             if phase1_positive else
+             f"Sin riesgo ({phase1_result['probability']:.1%})"
+         ),
+         ACCENT_YELLOW if not phase1_result.get("executed")
+         else ACCENT_RED if phase1_positive else ACCENT_GREEN),
         ("Fase 2 — Colonoscopia:",
-         f"{phase2_positives} frames con pólipos",
-         ACCENT_RED if phase2_positives > 0 else ACCENT_GREEN),
+         (
+             "No ejecutada"
+             if not phase2_result.get("executed") else
+             f"{phase2_positive_frames} frames con hallazgos, "
+             f"{phase2_result['total_detections']} detecciones"
+         ),
+         ACCENT_YELLOW if not phase2_result.get("executed")
+         else ACCENT_RED if phase2_positive_frames > 0 else ACCENT_GREEN),
         ("Fase 3 — Foto histológica:",
-         "Muestra maligna" if phase3_positives > 0 else "Muestra no maligna",
-         ACCENT_RED if phase3_positives > 0 else ACCENT_GREEN),
+         (
+             "No ejecutada"
+             if not phase3_result.get("executed") else
+             f"Muestra maligna ({phase3_result['confidence']:.1%})"
+             if phase3_malignant else
+             f"Muestra no maligna ({phase3_result['confidence']:.1%})"
+         ),
+         ACCENT_YELLOW if not phase3_result.get("executed")
+         else ACCENT_RED if phase3_malignant else ACCENT_GREEN),
     ]
     for label, value, color in rows:
         row = tk.Frame(summary, bg=BG_CARD)
@@ -1293,21 +1697,71 @@ def show_final_result(
         ).pack(side="left")
 
     # Conclusión
-    all_positive = (
-        phase1_positive and phase2_positives > 0 and phase3_positives > 0
-    )
-    if all_positive:
-        conclusion = "⚠️  Se recomienda consulta especializada urgente"
+    if phase3_malignant:
+        conclusion = "⚠️  Posible resultado final: muestra maligna"
+        detail = (
+            "La fase histológica fue positiva. Es la señal más fuerte del flujo "
+            "actual y conviene una revisión médica prioritaria."
+        )
         conclusion_color = ACCENT_RED
-    else:
-        conclusion = "ℹ️  Resultados parcialmente negativos"
+    elif phase1_positive and phase2_positive_frames > 0:
+        conclusion = "⚠️  Posible resultado final: caso sospechoso"
+        detail = (
+            "Hubo riesgo inicial y hallazgos en colonoscopia, aunque la imagen "
+            "histológica no se clasificó como maligna."
+        )
         conclusion_color = ACCENT_YELLOW
+    elif phase2_positive_frames > 0:
+        conclusion = "⚠️  Posible resultado final: hallazgos a revisar"
+        detail = (
+            "Se detectaron pólipos o regiones sospechosas en colonoscopia. "
+            "No equivale por sí solo a malignidad."
+        )
+        conclusion_color = ACCENT_YELLOW
+    else:
+        conclusion = "✅  Posible resultado final: sin hallazgos malignos claros"
+        detail = (
+            "En el flujo ejecutado no apareció evidencia fuerte de malignidad."
+        )
+        conclusion_color = ACCENT_GREEN
 
     tk.Label(root, text="", bg=BG_DARK).pack(pady=3)
     tk.Label(
         root, text=conclusion,
         font=("Segoe UI", 12, "bold"), fg=conclusion_color, bg=BG_DARK,
     ).pack(pady=(5, 15))
+    tk.Label(
+        root, text=detail,
+        font=("Segoe UI", 10), fg=FG_SUB, bg=BG_DARK,
+        wraplength=560, justify="center",
+    ).pack(pady=(0, 12))
+
+    analysis = tk.Frame(root, bg=BG_CARD, padx=20, pady=14)
+    analysis.pack(padx=30, pady=(0, 16), fill="x")
+    _metric_row(
+        analysis,
+        "Fase 1 en modo demo",
+        "Sí" if phase1_result["demo_mode"] else "No",
+        ACCENT_YELLOW if phase1_result["demo_mode"] else ACCENT_GREEN,
+    )
+    _metric_row(
+        analysis,
+        "Cobertura colonoscopia",
+        (
+            f"{phase2_result['completion_ratio'] * 100:.1f}%"
+            if phase2_result["completion_ratio"] is not None else
+            "Webcam / sin duración fija"
+            if phase2_result.get("executed") else
+            "No ejecutada"
+        ),
+    )
+    _metric_row(
+        analysis,
+        "Clase histológica",
+        phase3_result["class_name"] if phase3_result.get("executed") else "No ejecutada",
+        ACCENT_YELLOW if not phase3_result.get("executed")
+        else ACCENT_RED if phase3_malignant else ACCENT_GREEN,
+    )
 
     tk.Button(
         root, text="Cerrar", bg=BTN_INACTIVE, fg=FG_TEXT,
@@ -1316,7 +1770,7 @@ def show_final_result(
         relief="flat", cursor="hand2",
     ).pack(pady=(0, 20))
 
-    _center_window(root, 520, 380)
+    _center_window(root, 640, 520)
     root.mainloop()
 
 
@@ -1351,35 +1805,67 @@ def main() -> None:
         # Funciones auxiliares para ejecutar cada fase
         # ───────────────────────────────────────────
 
-        def run_phase1() -> tuple[bool, str]:
-            """Ejecuta Fase 1. Devuelve (quiere_avanzar, status_text)."""
+        def run_phase1() -> tuple[bool, dict[str, Any]]:
+            """Ejecuta Fase 1. Devuelve (quiere_avanzar, resumen_de_fase)."""
             print("─" * 55)
             print("  FASE 1: HISTORIAL MÉDICO")
             print("─" * 55)
 
             act, filepath = show_phase1_menu()
             if act != "load" or filepath is None:
-                return False, "OMITIDO"
+                return False, {
+                    "executed": False,
+                    "status": "OMITIDO",
+                    "is_positive": False,
+                    "probability": 0.0,
+                    "demo_mode": history_model is None,
+                    "numeric_fields": 0,
+                    "total_fields": 0,
+                }
 
             patient_data = load_patient_data(filepath)
             if patient_data is None:
                 messagebox.showerror(
                     "Error", "No se pudieron cargar los datos del paciente."
                 )
-                return False, "ERROR"
+                return False, {
+                    "executed": False,
+                    "status": "ERROR",
+                    "is_positive": False,
+                    "probability": 0.0,
+                    "demo_mode": history_model is None,
+                    "numeric_fields": 0,
+                    "total_fields": 0,
+                }
 
             print(f"  ✓ Datos cargados: {len(patient_data)} campos")
             is_pos, prob = predict_cancer_risk(history_model, patient_data)
+            numeric_fields = sum(1 for v in patient_data.values() if _is_numeric(v))
             st = "RIESGO" if is_pos else "SIN RIESGO"
             print(f"  Resultado: {st} ({prob:.2%})")
+            phase1_result = {
+                "executed": True,
+                "status": st,
+                "is_positive": is_pos,
+                "probability": prob,
+                "demo_mode": history_model is None,
+                "numeric_fields": numeric_fields,
+                "total_fields": len(patient_data),
+            }
 
-            act = show_phase1_result(patient_data, is_pos, prob)
+            act = show_phase1_result(
+                patient_data,
+                is_pos,
+                prob,
+                demo_mode=phase1_result["demo_mode"],
+                numeric_fields=numeric_fields,
+            )
             if act == "next":
-                return True, st
-            return False, st
+                return True, phase1_result
+            return False, phase1_result
 
-        def run_phase2() -> tuple[bool, int]:
-            """Ejecuta Fase 2. Devuelve (tiene_detecciones, conteo)."""
+        def run_phase2(has_next_phase: bool = False) -> tuple[bool, dict[str, Any]]:
+            """Ejecuta Fase 2. Devuelve (quiere_avanzar, resumen_de_fase)."""
             print()
             print("─" * 55)
             print("  FASE 2: COLONOSCOPIA")
@@ -1387,13 +1873,24 @@ def main() -> None:
 
             act, video_path = show_video_menu(2, "Colonoscopia", ACCENT_GREEN)
             if act == "exit":
-                return False, 0
+                return False, {
+                    "executed": False,
+                    "source_mode": "No iniciado",
+                    "frames_processed": 0,
+                    "positive_frames": 0,
+                    "total_detections": 0,
+                    "peak_detections": 0,
+                    "avg_confidence": 0.0,
+                    "max_confidence": 0.0,
+                    "completion_ratio": None,
+                    "end_reason": "cancelled",
+                }
 
             source = video_path if act == "video" else WEBCAM_INDEX
             mode = "Video" if act == "video" else "Webcam"
             print(f"  Modo: {mode}")
 
-            has_det, count = process_video_phase(
+            has_det, phase2_stats = process_video_phase(
                 source, mode, colonoscopy_model,
                 phase_label="Fase 2: Colonoscopia",
                 phase_color="polyp",
@@ -1402,16 +1899,17 @@ def main() -> None:
             act = show_video_result(
                 phase_num=2,
                 phase_title="Colonoscopia",
-                has_detections=has_det,
-                total_positives=count,
-                has_next_phase=True,
+                stats=phase2_stats,
+                has_next_phase=has_next_phase,
             )
             if act == "next":
-                return True, count
-            return False, count
+                phase2_stats["executed"] = True
+                return True, phase2_stats
+            phase2_stats["executed"] = True
+            return False, phase2_stats
 
-        def run_phase3() -> tuple[bool, int]:
-            """Ejecuta Fase 3. Devuelve (quiere_ver_resultado, conteo)."""
+        def run_phase3(has_next_phase: bool = False) -> tuple[bool, dict[str, Any]]:
+            """Ejecuta Fase 3. Devuelve (quiere_ver_resultado, resumen_de_fase)."""
             print()
             print("─" * 55)
             print("  FASE 3: ANÁLISIS MICROSCÓPICO")
@@ -1421,24 +1919,31 @@ def main() -> None:
                 3, "Análisis Microscópico", ACCENT_MAUVE
             )
             if act == "exit":
-                return False, 0
+                return False, {
+                    "executed": False,
+                    "image_path": "",
+                    "image_name": "",
+                    "is_malignant": False,
+                    "confidence": 0.0,
+                    "class_name": "NO_INICIADO",
+                    "demo_mode": microscopy_model is None,
+                }
 
-            has_det, confidence, class_name = process_image_classification(
+            phase3_result = process_image_classification(
                 image_path, microscopy_model,
                 phase_label="Fase 3: Foto histológica",
             )
+            phase3_result["executed"] = True
 
             act = show_classification_result(
                 phase_num=3,
                 phase_title="Análisis Microscópico",
-                is_malignant=has_det,
-                confidence=confidence,
-                class_name=class_name,
-                has_next_phase=True,
+                result_data=phase3_result,
+                has_next_phase=has_next_phase,
             )
             if act == "next":
-                return True, 1 if has_det else 0
-            return False, 1 if has_det else 0
+                return True, phase3_result
+            return False, phase3_result
 
         # ───────────────────────────────────────────
         # Ejecutar según la acción del menú principal
@@ -1446,32 +1951,74 @@ def main() -> None:
 
         if action == "start":
             # ══ FLUJO COMPLETO: Fase 1 → 2 → 3 → Resultado ══
-            advance, status = run_phase1()
+            default_phase2_result = {
+                "executed": False,
+                "source_mode": "No iniciado",
+                "frames_processed": 0,
+                "positive_frames": 0,
+                "total_detections": 0,
+                "peak_detections": 0,
+                "avg_confidence": 0.0,
+                "max_confidence": 0.0,
+                "completion_ratio": None,
+                "end_reason": "cancelled",
+            }
+            default_phase3_result = {
+                "executed": False,
+                "image_path": "",
+                "image_name": "",
+                "is_malignant": False,
+                "confidence": 0.0,
+                "class_name": "NO_EJECUTADA",
+                "demo_mode": microscopy_model is None,
+            }
+
+            advance, phase1_result = run_phase1()
             if not advance:
+                if phase1_result.get("executed") and not phase1_result["is_positive"]:
+                    show_final_result(
+                        phase1_result=phase1_result,
+                        phase2_result=default_phase2_result,
+                        phase3_result=default_phase3_result,
+                    )
                 continue
 
-            advance, polyp_count = run_phase2()
+            advance, phase2_result = run_phase2(has_next_phase=True)
             if not advance:
+                if phase2_result.get("executed") and phase2_result["positive_frames"] == 0:
+                    show_final_result(
+                        phase1_result=phase1_result,
+                        phase2_result=phase2_result,
+                        phase3_result=default_phase3_result,
+                    )
                 continue
 
-            advance, cancer_count = run_phase3()
+            advance, phase3_result = run_phase3(has_next_phase=True)
             if advance:
                 print()
                 print("═" * 55)
                 print("  RESULTADO FINAL")
                 print("═" * 55)
-                print(f"  Fase 1 — Historial:    {status}")
-                print(f"  Fase 2 — Colonoscopia: {polyp_count} detecciones")
+                print(f"  Fase 1 — Historial:    {phase1_result['status']}")
+                print(
+                    "  Fase 2 — Colonoscopia: "
+                    f"{phase2_result['positive_frames']} frames con hallazgos, "
+                    f"{phase2_result['total_detections']} detecciones"
+                )
                 print(
                     "  Fase 3 — Foto histológica:  "
-                    + ("muestra maligna" if cancer_count > 0 else "muestra no maligna")
+                    + (
+                        "muestra maligna"
+                        if phase3_result["is_malignant"]
+                        else "muestra no maligna"
+                    )
                 )
                 print("═" * 55)
 
                 show_final_result(
-                    phase1_positive=(status == "RIESGO"),
-                    phase2_positives=polyp_count,
-                    phase3_positives=cancer_count,
+                    phase1_result=phase1_result,
+                    phase2_result=phase2_result,
+                    phase3_result=phase3_result,
                 )
 
         elif action == "phase1":

@@ -29,10 +29,13 @@ def crear_dataset_balanceado(ruta_col, ruta_crc, ruta_salida):
 
     # Mapear el BMI numérico a las tres categorías médicas estándar
     def map_bmi(bmi):
-        if pd.isna(bmi): return 'Normal'
-        if bmi < 25: return 'Normal'
-        elif bmi < 30: return 'Overweight'
-        else: return 'Obese'
+        if pd.isna(bmi):
+            return 'Normal'
+        if bmi < 25:
+            return 'Normal'
+        if bmi < 30:
+            return 'Overweight'
+        return 'Obese'
     df_crc_clean['Obesity_BMI'] = df_crc['BMI'].apply(map_bmi)
 
     # Mapear Enfermedades y Estilo de Vida
@@ -40,10 +43,13 @@ def crear_dataset_balanceado(ruta_col, ruta_crc, ruta_salida):
     df_crc_clean['Smoking_History'] = df_crc['Lifestyle'].apply(lambda x: 'Yes' if x == 'Smoker' else 'No')
 
     def map_activity(x):
-        if x == 'Sedentary': return 'Low'
-        elif x == 'Moderate Exercise': return 'Moderate'
-        elif x == 'Active': return 'High'
-        else: return 'Low' 
+        if x == 'Sedentary':
+            return 'Low'
+        if x == 'Moderate Exercise':
+            return 'Moderate'
+        if x == 'Active':
+            return 'High'
+        return 'Low'
     df_crc_clean['Physical_Activity'] = df_crc['Lifestyle'].apply(map_activity)
     
     # Guardar el diagnóstico original del CSV

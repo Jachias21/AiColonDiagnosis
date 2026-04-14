@@ -414,7 +414,8 @@ def draw_detections(
         x1, y1, x2, y2 = det["x1"], det["y1"], det["x2"], det["y2"]
         conf = det["confidence"]
         cls_name = det["class_name"]
-        label = f"{cls_name} {conf:.2f}"
+        track_id = det.get("track_id")
+        label = f"{cls_name} #{track_id} {conf:.2f}" if track_id is not None else f"{cls_name} {conf:.2f}"
 
         cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
         (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
@@ -586,6 +587,336 @@ def _format_ratio(numerator: int, denominator: int) -> str:
     return f"{(numerator / denominator) * 100:.1f}%"
 
 
+def _bbox_iou(box_a: dict[str, Any], box_b: dict[str, Any]) -> float:
+    """Calcula IoU entre dos cajas."""
+    x_left = max(int(box_a["x1"]), int(box_b["x1"]))
+    y_top = max(int(box_a["y1"]), int(box_b["y1"]))
+    x_right = min(int(box_a["x2"]), int(box_b["x2"]))
+    y_bottom = min(int(box_a["y2"]), int(box_b["y2"]))
+
+    if x_right <= x_left or y_bottom <= y_top:
+        return 0.0
+
+    intersection = float((x_right - x_left) * (y_bottom - y_top))
+    area_a = float(
+        max(int(box_a["x2"]) - int(box_a["x1"]), 0)
+        * max(int(box_a["y2"]) - int(box_a["y1"]), 0)
+    )
+    area_b = float(
+        max(int(box_b["x2"]) - int(box_b["x1"]), 0)
+        * max(int(box_b["y2"]) - int(box_b["y1"]), 0)
+    )
+    union = area_a + area_b - intersection
+    if union <= 0:
+        return 0.0
+    return intersection / union
+
+
+def _update_polyp_tracks(
+    detections: list[dict],
+    active_tracks: list[dict[str, Any]],
+    next_track_id: int,
+    iou_threshold: float = 0.3,
+    max_missing_frames: int = 10,
+    min_confirm_frames: int = 2,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Asocia detecciones a tracks y devuelve cuántos pólipos únicos nuevos confirmar."""
+    for track in active_tracks:
+        track["matched"] = False
+
+    unique_new_polyps = 0
+
+    for det in detections:
+        best_track = None
+        best_iou = 0.0
+        for track in active_tracks:
+            if track["matched"]:
+                continue
+            iou = _bbox_iou(det, track["bbox"])
+            if iou > best_iou:
+                best_iou = iou
+                best_track = track
+
+        if best_track is not None and best_iou >= iou_threshold:
+            best_track["bbox"] = {
+                "x1": det["x1"],
+                "y1": det["y1"],
+                "x2": det["x2"],
+                "y2": det["y2"],
+            }
+            best_track["confidence"] = det["confidence"]
+            best_track["missing"] = 0
+            best_track["hits"] += 1
+            best_track["matched"] = True
+            det["track_id"] = best_track["track_id"]
+            if not best_track["counted"] and best_track["hits"] >= min_confirm_frames:
+                best_track["counted"] = True
+                unique_new_polyps += 1
+        else:
+            new_track = {
+                "track_id": next_track_id,
+                "bbox": {
+                    "x1": det["x1"],
+                    "y1": det["y1"],
+                    "x2": det["x2"],
+                    "y2": det["y2"],
+                },
+                "confidence": det["confidence"],
+                "missing": 0,
+                "hits": 1,
+                "counted": False,
+                "matched": True,
+            }
+            active_tracks.append(new_track)
+            det["track_id"] = next_track_id
+            next_track_id += 1
+
+    surviving_tracks: list[dict[str, Any]] = []
+    for track in active_tracks:
+        if not track["matched"]:
+            track["missing"] += 1
+        if track["missing"] <= max_missing_frames:
+            surviving_tracks.append(track)
+
+    return surviving_tracks, next_track_id, unique_new_polyps
+
+
+def _normalize_heatmap(heatmap: np.ndarray) -> np.ndarray:
+    """Normaliza un mapa a rango 0..255."""
+    if heatmap.size == 0:
+        return heatmap
+    heatmap = np.maximum(heatmap, 0)
+    max_value = float(heatmap.max())
+    if max_value <= 1e-8:
+        return np.zeros_like(heatmap, dtype=np.uint8)
+    return np.uint8((heatmap / max_value) * 255.0)
+
+
+def create_detection_explanation(
+    frame: np.ndarray,
+    detections: list[dict],
+) -> dict[str, Any] | None:
+    """Crea un mapa de atención simple a partir de las detecciones YOLO."""
+    if frame is None or not detections:
+        return None
+
+    h, w = frame.shape[:2]
+    heatmap = np.zeros((h, w), dtype=np.float32)
+
+    for det in detections:
+        x1 = max(int(det["x1"]), 0)
+        y1 = max(int(det["y1"]), 0)
+        x2 = min(int(det["x2"]), w)
+        y2 = min(int(det["y2"]), h)
+        if x2 <= x1 or y2 <= y1:
+            continue
+        heatmap[y1:y2, x1:x2] += float(det["confidence"])
+
+    if not np.any(heatmap):
+        return None
+
+    blur_size = max(31, (min(h, w) // 12) | 1)
+    heatmap = cv2.GaussianBlur(heatmap, (blur_size, blur_size), 0)
+    heatmap_norm = _normalize_heatmap(heatmap)
+    heatmap_color = cv2.applyColorMap(heatmap_norm, cv2.COLORMAP_JET)
+    overlay = cv2.addWeighted(frame, 0.55, heatmap_color, 0.45, 0)
+
+    cv2.putText(
+        overlay,
+        "Mapa de atencion: zonas con mas peso en la deteccion",
+        (12, 28),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.65,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
+
+    return {
+        "original": frame.copy(),
+        "overlay": overlay,
+        "title": "Explicacion visual - Colonoscopia",
+        "method": "Mapa de detecciones ponderado por confianza",
+    }
+
+
+def _find_last_conv_layer(model: Any) -> Any | None:
+    """Encuentra la última capa convolucional 2D del modelo."""
+    import torch.nn as nn
+
+    last_conv = None
+    for module in model.modules():
+        if isinstance(module, nn.Conv2d):
+            last_conv = module
+    return last_conv
+
+
+def create_gradcam_explanation(
+    model_bundle: dict | None,
+    frame: np.ndarray,
+    target_class_name: str | None = None,
+) -> dict[str, Any] | None:
+    """Genera un Grad-CAM básico para el modelo de clasificación."""
+    if model_bundle is None or frame is None:
+        return None
+
+    import torch
+    import torch.nn.functional as F
+
+    model = model_bundle["model"]
+    transform = model_bundle["transform"]
+    device = model_bundle["device"]
+    class_names = model_bundle["class_names"]
+    target_layer = model_bundle.get("gradcam_layer") or _find_last_conv_layer(model)
+    model_bundle["gradcam_layer"] = target_layer
+
+    if target_layer is None:
+        return None
+
+    activations: list[torch.Tensor] = []
+    gradients: list[torch.Tensor] = []
+
+    def forward_hook(_module, _inputs, output):
+        activations.append(output.detach())
+
+    def backward_hook(_module, _grad_input, grad_output):
+        gradients.append(grad_output[0].detach())
+
+    handle_fw = target_layer.register_forward_hook(forward_hook)
+    handle_bw = target_layer.register_full_backward_hook(backward_hook)
+
+    try:
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        tensor = transform(rgb).unsqueeze(0).to(device)
+
+        model.zero_grad(set_to_none=True)
+        outputs = model(tensor)
+        probs = torch.softmax(outputs, dim=1)[0]
+
+        if target_class_name and target_class_name in class_names:
+            class_idx = class_names.index(target_class_name)
+        else:
+            class_idx = int(probs.argmax().item())
+
+        score = outputs[:, class_idx].sum()
+        score.backward()
+
+        if not activations or not gradients:
+            return None
+
+        activation = activations[-1]
+        gradient = gradients[-1]
+        weights = gradient.mean(dim=(2, 3), keepdim=True)
+        cam = torch.relu((weights * activation).sum(dim=1, keepdim=True))
+        cam = F.interpolate(
+            cam,
+            size=(frame.shape[0], frame.shape[1]),
+            mode="bilinear",
+            align_corners=False,
+        )
+        cam_np = cam[0, 0].detach().cpu().numpy()
+        heatmap_norm = _normalize_heatmap(cam_np)
+        heatmap_color = cv2.applyColorMap(heatmap_norm, cv2.COLORMAP_JET)
+        overlay = cv2.addWeighted(frame, 0.55, heatmap_color, 0.45, 0)
+
+        label = class_names[class_idx]
+        cv2.putText(
+            overlay,
+            f"Grad-CAM: zonas que mas activan {label}",
+            (12, 28),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+
+        return {
+            "original": frame.copy(),
+            "overlay": overlay,
+            "title": "Explicacion visual - Histologia",
+            "method": f"Grad-CAM sobre {label}",
+        }
+    except Exception as exc:
+        print(f"  ⚠ No se pudo generar Grad-CAM: {exc}")
+        return None
+    finally:
+        handle_fw.remove()
+        handle_bw.remove()
+
+
+def show_explanation_window(explanation: dict[str, Any] | None) -> None:
+    """Muestra la explicación visual en una ventana centrada."""
+    if explanation is None:
+        messagebox.showinfo(
+            "Explicacion visual",
+            "No hay un mapa explicativo disponible para este resultado.",
+        )
+        return
+
+    original = explanation["original"]
+    overlay = explanation["overlay"]
+    if original.shape[:2] != overlay.shape[:2]:
+        overlay = cv2.resize(overlay, (original.shape[1], original.shape[0]))
+
+    title_bar = np.full((60, original.shape[1] * 2 + 20, 3), 26, dtype=np.uint8)
+    cv2.putText(
+        title_bar,
+        "Original",
+        (20, 38),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.85,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        title_bar,
+        explanation.get("method", "Mapa explicativo"),
+        (original.shape[1] + 40, 38),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.72,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
+    separator = np.full((original.shape[0], 20, 3), 20, dtype=np.uint8)
+    content = np.hstack([original, separator, overlay])
+    canvas = np.vstack([title_bar, content])
+
+    window_name = explanation.get("title", "Explicacion visual")
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    _center_cv_window(window_name, canvas.shape[1], canvas.shape[0], max_width=1500, max_height=900)
+
+    ui_state: dict[str, Any] = {"buttons": {}, "clicked": None}
+    _set_mouse_buttons_handler(window_name, ui_state)
+
+    while True:
+        if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+            break
+
+        frame_to_show = canvas.copy()
+        frame_to_show, buttons = _draw_action_buttons(
+            frame_to_show,
+            [("close", "Cerrar", (70, 95, 220))],
+            title="Explicacion",
+        )
+        ui_state["buttons"] = buttons
+        cv2.imshow(window_name, frame_to_show)
+
+        key = cv2.waitKey(30) & 0xFF
+        clicked = ui_state.pop("clicked", None)
+        if key in (27, ord("q"), 13, ord(" ")):
+            break
+        if clicked == "close":
+            break
+
+    try:
+        cv2.destroyWindow(window_name)
+    except cv2.error:
+        pass
+
+
 def save_screenshot(frame: np.ndarray, prefix: str = "screenshot") -> str:
     """Guarda screenshot del frame actual."""
     screenshots = Path(SCREENSHOTS_DIR)
@@ -616,10 +947,12 @@ def process_video_phase(
             "positive_frames": 0,
             "total_detections": 0,
             "peak_detections": 0,
+            "unique_polyps": 0,
             "avg_confidence": 0.0,
             "max_confidence": 0.0,
             "completion_ratio": None,
             "end_reason": "error",
+            "explanation": None,
         }
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if mode == "Video" else 0
@@ -646,6 +979,7 @@ def process_video_phase(
     total_positives = 0
     total_detections = 0
     peak_detections = 0
+    unique_polyps = 0
     confidence_sum = 0.0
     max_confidence = 0.0
     paused = False
@@ -653,7 +987,12 @@ def process_video_phase(
     fps_display = 0.0
     last_frame = None
     last_visual_frame = None
+    best_detection_score = -1.0
+    best_focus_frame = None
+    best_focus_detections: list[dict] = []
     end_reason = "completed"
+    active_tracks: list[dict[str, Any]] = []
+    next_track_id = 1
     ui_state: dict[str, Any] = {"buttons": {}, "clicked": None}
     _set_mouse_buttons_handler(window_name, ui_state)
 
@@ -682,6 +1021,12 @@ def process_video_phase(
             if model is not None:
                 detections = run_inference(model, frame)
             detections_in_frame = len(detections)
+            active_tracks, next_track_id, new_unique_polyps = _update_polyp_tracks(
+                detections,
+                active_tracks,
+                next_track_id,
+            )
+            unique_polyps += new_unique_polyps
             if detections_in_frame:
                 total_positives += 1
                 total_detections += detections_in_frame
@@ -691,6 +1036,11 @@ def process_video_phase(
                     max_confidence,
                     max(det["confidence"] for det in detections),
                 )
+                detection_score = sum(det["confidence"] for det in detections)
+                if detection_score > best_detection_score:
+                    best_detection_score = detection_score
+                    best_focus_frame = frame.copy()
+                    best_focus_detections = [det.copy() for det in detections]
 
             frame = draw_detections(frame, detections, phase_color)
 
@@ -776,10 +1126,14 @@ def process_video_phase(
         "positive_frames": total_positives,
         "total_detections": total_detections,
         "peak_detections": peak_detections,
+        "unique_polyps": unique_polyps,
         "avg_confidence": avg_confidence,
         "max_confidence": max_confidence,
         "completion_ratio": completion_ratio,
         "end_reason": end_reason,
+        "explanation": create_detection_explanation(
+            best_focus_frame, best_focus_detections
+        ),
     }
     return has_detections, stats
 
@@ -952,6 +1306,7 @@ def process_image_classification(
             "confidence": 0.0,
             "class_name": "ERROR",
             "demo_mode": model_bundle is None,
+            "explanation": None,
         }
 
     print(f"  Imagen cargada: {Path(image_path).name}")
@@ -1043,6 +1398,7 @@ def process_image_classification(
         "confidence": confidence,
         "class_name": cls_name,
         "demo_mode": model_bundle is None,
+        "explanation": create_gradcam_explanation(model_bundle, frame, cls_name),
     }
 
 
@@ -1557,7 +1913,7 @@ def show_video_result(
     has_detections = stats["positive_frames"] > 0
     if has_detections:
         color = ACCENT_RED
-        text = f"⚠️  HALLAZGOS EN {stats['positive_frames']} FRAMES"
+        text = f"⚠️  {stats['unique_polyps']} POLIPOS UNICOS ESTIMADOS"
         subtext = "Se detectaron regiones sospechosas durante el análisis."
     else:
         color = ACCENT_GREEN
@@ -1579,9 +1935,15 @@ def show_video_result(
     _metric_row(metrics, "Frames procesados", str(stats["frames_processed"]))
     _metric_row(
         metrics,
-        "Frames con pólipos",
+        "Frames con hallazgos",
         f"{stats['positive_frames']} ({_format_ratio(stats['positive_frames'], stats['frames_processed'])})",
         ACCENT_RED if has_detections else ACCENT_GREEN,
+    )
+    _metric_row(
+        metrics,
+        "Polipos unicos estimados",
+        str(stats["unique_polyps"]),
+        ACCENT_RED if stats["unique_polyps"] > 0 else ACCENT_GREEN,
     )
     _metric_row(metrics, "Detecciones totales", str(stats["total_detections"]))
     _metric_row(metrics, "Pico en un frame", str(stats["peak_detections"]))
@@ -1617,6 +1979,17 @@ def show_video_result(
     def on_restart():
         result["action"] = "restart"
         root.destroy()
+
+    def on_explanation():
+        show_explanation_window(stats.get("explanation"))
+
+    if stats.get("explanation") is not None:
+        _make_button(
+            root,
+            "🧠  Ver en que se ha fijado el modelo",
+            ACCENT_BLUE,
+            on_explanation,
+        ).pack(pady=(0, 8))
 
     if has_detections and has_next_phase:
         if phase_num == 2:
@@ -1719,6 +2092,17 @@ def show_classification_result(
         result["action"] = "restart"
         root.destroy()
 
+    def on_explanation():
+        show_explanation_window(result_data.get("explanation"))
+
+    if result_data.get("explanation") is not None:
+        _make_button(
+            root,
+            "🧠  Ver en que se ha fijado el modelo",
+            ACCENT_BLUE,
+            on_explanation,
+        ).pack(pady=(0, 8))
+
     if has_next_phase:
         _make_button(root, "▶  Ver resultado final", ACCENT_MAUVE, on_next).pack(
             pady=(0, 8)
@@ -1771,8 +2155,8 @@ def show_final_result(
          (
              "No ejecutada"
              if not phase2_result.get("executed") else
-             f"{phase2_positive_frames} frames con hallazgos, "
-             f"{phase2_result['total_detections']} detecciones"
+             f"{phase2_result['unique_polyps']} polipos unicos estimados, "
+             f"{phase2_positive_frames} frames con hallazgos"
          ),
          ACCENT_YELLOW if not phase2_result.get("executed")
          else ACCENT_RED if phase2_positive_frames > 0 else ACCENT_GREEN),
@@ -1857,6 +2241,13 @@ def show_final_result(
             if phase2_result.get("executed") else
             "No ejecutada"
         ),
+    )
+    _metric_row(
+        analysis,
+        "Polipos unicos estimados",
+        str(phase2_result["unique_polyps"]) if phase2_result.get("executed") else "No ejecutada",
+        ACCENT_YELLOW if not phase2_result.get("executed")
+        else ACCENT_RED if phase2_result["unique_polyps"] > 0 else ACCENT_GREEN,
     )
     _metric_row(
         analysis,
@@ -1992,10 +2383,12 @@ def main() -> None:
                     "positive_frames": 0,
                     "total_detections": 0,
                     "peak_detections": 0,
+                    "unique_polyps": 0,
                     "avg_confidence": 0.0,
                     "max_confidence": 0.0,
                     "completion_ratio": None,
                     "end_reason": "cancelled",
+                    "explanation": None,
                 }
 
             source = video_path if act == "video" else WEBCAM_INDEX
@@ -2039,6 +2432,7 @@ def main() -> None:
                     "confidence": 0.0,
                     "class_name": "NO_INICIADO",
                     "demo_mode": microscopy_model is None,
+                    "explanation": None,
                 }
 
             phase3_result = process_image_classification(
@@ -2070,10 +2464,12 @@ def main() -> None:
                 "positive_frames": 0,
                 "total_detections": 0,
                 "peak_detections": 0,
+                "unique_polyps": 0,
                 "avg_confidence": 0.0,
                 "max_confidence": 0.0,
                 "completion_ratio": None,
                 "end_reason": "cancelled",
+                "explanation": None,
             }
             default_phase3_result = {
                 "executed": False,
@@ -2083,6 +2479,7 @@ def main() -> None:
                 "confidence": 0.0,
                 "class_name": "NO_EJECUTADA",
                 "demo_mode": microscopy_model is None,
+                "explanation": None,
             }
 
             advance, phase1_result = run_phase1()
@@ -2114,8 +2511,8 @@ def main() -> None:
                 print(f"  Fase 1 — Historial:    {phase1_result['status']}")
                 print(
                     "  Fase 2 — Colonoscopia: "
-                    f"{phase2_result['positive_frames']} frames con hallazgos, "
-                    f"{phase2_result['total_detections']} detecciones"
+                    f"{phase2_result['unique_polyps']} polipos unicos estimados, "
+                    f"{phase2_result['positive_frames']} frames con hallazgos"
                 )
                 print(
                     "  Fase 3 — Foto histológica:  "

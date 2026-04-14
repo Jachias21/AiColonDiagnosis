@@ -54,6 +54,10 @@ MODEL_MICROSCOPY_META: str = "models/microscopy_meta.json"  # Metadata del model
 # Umbrales
 CONFIDENCE_THRESHOLD: float = 0.25
 HISTORY_RISK_THRESHOLD: float = 0.5    # Umbral para considerar riesgo positivo
+COLONOSCOPY_CONFIDENCE_THRESHOLD: float = 0.50  # Reduce falsos positivos de YOLO
+POLYP_CONFIRM_SECONDS: float = 1.0      # Tiempo mínimo persistente para contar pólipo
+POLYP_TRACK_IOU_THRESHOLD: float = 0.25
+POLYP_TRACK_MAX_MISSING_SECONDS: float = 0.35
 
 # Rendimiento
 FRAME_SKIP: int = 1
@@ -313,12 +317,16 @@ def _is_numeric(value) -> bool:
 # FASES 2 y 3: DETECCIÓN EN VÍDEO
 # ══════════════════════════════════════════════
 
-def run_inference(model: Any, frame: np.ndarray) -> list[dict]:
+def run_inference(
+    model: Any,
+    frame: np.ndarray,
+    confidence_threshold: float = CONFIDENCE_THRESHOLD,
+) -> list[dict]:
     """Ejecuta YOLO sobre un frame y devuelve las detecciones."""
     results = model.predict(
         source=frame,
         imgsz=INFERENCE_SIZE,
-        conf=CONFIDENCE_THRESHOLD,
+        conf=confidence_threshold,
         verbose=False,
     )
     detections: list[dict] = []
@@ -553,7 +561,7 @@ def _update_polyp_tracks(
     next_track_id: int,
     iou_threshold: float = 0.3,
     max_missing_frames: int = 10,
-    min_confirm_frames: int = 2,
+    min_confirm_frames: int = 30,
 ) -> tuple[list[dict[str, Any]], int, int]:
     """Asocia detecciones a tracks y devuelve cuántos pólipos únicos nuevos confirmar."""
     for track in active_tracks:
@@ -885,6 +893,9 @@ def process_video_phase(
             "unique_polyps": 0,
             "avg_confidence": 0.0,
             "max_confidence": 0.0,
+            "confidence_threshold": COLONOSCOPY_CONFIDENCE_THRESHOLD,
+            "min_confirm_seconds": POLYP_CONFIRM_SECONDS,
+            "min_confirm_frames": 0,
             "completion_ratio": None,
             "end_reason": "error",
             "explanation": None,
@@ -894,10 +905,23 @@ def process_video_phase(
     src_fps = cap.get(cv2.CAP_PROP_FPS) or 30
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    effective_fps = max(src_fps / max(FRAME_SKIP, 1), 1.0)
+    min_confirm_frames = max(8, int(round(POLYP_CONFIRM_SECONDS * effective_fps)))
+    max_missing_frames = max(
+        3,
+        int(round(POLYP_TRACK_MAX_MISSING_SECONDS * effective_fps)),
+    )
 
     print(f"  Resolución: {width}x{height}")
     if total_frames > 0:
         print(f"  Frames: {total_frames} | FPS fuente: {src_fps:.1f}")
+
+    print(
+        "  Filtro de pólipos: "
+        f"confianza >= {COLONOSCOPY_CONFIDENCE_THRESHOLD:.0%}, "
+        f"persistencia >= {POLYP_CONFIRM_SECONDS:.1f}s "
+        f"({min_confirm_frames} frames efectivos)"
+    )
 
     # Writer opcional
     writer = None
@@ -954,12 +978,19 @@ def process_video_phase(
             # Inferencia
             detections: list[dict] = []
             if model is not None:
-                detections = run_inference(model, frame)
+                detections = run_inference(
+                    model,
+                    frame,
+                    confidence_threshold=COLONOSCOPY_CONFIDENCE_THRESHOLD,
+                )
             detections_in_frame = len(detections)
             active_tracks, next_track_id, new_unique_polyps = _update_polyp_tracks(
                 detections,
                 active_tracks,
                 next_track_id,
+                iou_threshold=POLYP_TRACK_IOU_THRESHOLD,
+                max_missing_frames=max_missing_frames,
+                min_confirm_frames=min_confirm_frames,
             )
             unique_polyps += new_unique_polyps
             if detections_in_frame:
@@ -1048,7 +1079,7 @@ def process_video_phase(
     print(f"  Frames procesados: {frame_count}")
     print(f"  Frames con detección: {total_positives}")
 
-    has_detections = total_positives > 0
+    has_detections = unique_polyps > 0
     completion_ratio = (
         min(frame_count / total_frames, 1.0) if total_frames > 0 else None
     )
@@ -1064,6 +1095,9 @@ def process_video_phase(
         "unique_polyps": unique_polyps,
         "avg_confidence": avg_confidence,
         "max_confidence": max_confidence,
+        "confidence_threshold": COLONOSCOPY_CONFIDENCE_THRESHOLD,
+        "min_confirm_seconds": POLYP_CONFIRM_SECONDS,
+        "min_confirm_frames": min_confirm_frames,
         "completion_ratio": completion_ratio,
         "end_reason": end_reason,
         "explanation": create_detection_explanation(
@@ -1807,15 +1841,15 @@ def show_video_result(
         font=("Segoe UI", 16, "bold"), fg=FG_TEXT, bg=BG_DARK,
     ).pack(pady=(25, 10))
 
-    has_detections = stats["positive_frames"] > 0
+    has_detections = stats["unique_polyps"] > 0
     if has_detections:
         color = ACCENT_RED
-        text = f"⚠️  {stats['unique_polyps']} POLIPOS UNICOS ESTIMADOS"
-        subtext = "Se detectaron regiones sospechosas durante el análisis."
+        text = f"⚠️  {stats['unique_polyps']} POLIPOS CONFIRMADOS"
+        subtext = "Se confirmaron regiones sospechosas persistentes durante el analisis."
     else:
         color = ACCENT_GREEN
-        text = "✅  SIN DETECCIONES"
-        subtext = "No se encontraron regiones sospechosas en la fase analizada."
+        text = "✅  SIN POLIPOS CONFIRMADOS"
+        subtext = "Las detecciones breves o inestables se descartaron como candidatas."
 
     tk.Label(
         root, text=text,
@@ -1832,17 +1866,23 @@ def show_video_result(
     _metric_row(metrics, "Frames procesados", str(stats["frames_processed"]))
     _metric_row(
         metrics,
-        "Frames con hallazgos",
+        "Frames con candidatos",
         f"{stats['positive_frames']} ({_format_ratio(stats['positive_frames'], stats['frames_processed'])})",
-        ACCENT_RED if has_detections else ACCENT_GREEN,
+        ACCENT_YELLOW if stats["positive_frames"] > 0 and not has_detections else color,
     )
     _metric_row(
         metrics,
-        "Polipos unicos estimados",
+        "Polipos confirmados",
         str(stats["unique_polyps"]),
         ACCENT_RED if stats["unique_polyps"] > 0 else ACCENT_GREEN,
     )
     _metric_row(metrics, "Detecciones totales", str(stats["total_detections"]))
+    _metric_row(metrics, "Confianza minima", f"{stats['confidence_threshold']:.0%}")
+    _metric_row(
+        metrics,
+        "Persistencia minima",
+        f"{stats['min_confirm_seconds']:.1f}s ({stats['min_confirm_frames']} frames)",
+    )
     _metric_row(metrics, "Pico en un frame", str(stats["peak_detections"]))
     _metric_row(metrics, "Confianza media", f"{stats['avg_confidence']:.1%}")
     _metric_row(metrics, "Confianza máxima", f"{stats['max_confidence']:.1%}")
@@ -2052,11 +2092,11 @@ def show_final_result(
          (
              "No ejecutada"
              if not phase2_result.get("executed") else
-             f"{phase2_result['unique_polyps']} polipos unicos estimados, "
-             f"{phase2_positive_frames} frames con hallazgos"
+              f"{phase2_result['unique_polyps']} polipos confirmados, "
+              f"{phase2_positive_frames} frames candidatos"
          ),
          ACCENT_YELLOW if not phase2_result.get("executed")
-         else ACCENT_RED if phase2_positive_frames > 0 else ACCENT_GREEN),
+          else ACCENT_RED if phase2_result["unique_polyps"] > 0 else ACCENT_GREEN),
         ("Fase 3 — Foto histológica:",
          (
              "No ejecutada"
@@ -2141,7 +2181,7 @@ def show_final_result(
     )
     _metric_row(
         analysis,
-        "Polipos unicos estimados",
+        "Polipos confirmados",
         str(phase2_result["unique_polyps"]) if phase2_result.get("executed") else "No ejecutada",
         ACCENT_YELLOW if not phase2_result.get("executed")
         else ACCENT_RED if phase2_result["unique_polyps"] > 0 else ACCENT_GREEN,
@@ -2274,6 +2314,9 @@ def main() -> None:
                     "unique_polyps": 0,
                     "avg_confidence": 0.0,
                     "max_confidence": 0.0,
+                    "confidence_threshold": COLONOSCOPY_CONFIDENCE_THRESHOLD,
+                    "min_confirm_seconds": POLYP_CONFIRM_SECONDS,
+                    "min_confirm_frames": 0,
                     "completion_ratio": None,
                     "end_reason": "cancelled",
                     "explanation": None,
@@ -2355,6 +2398,9 @@ def main() -> None:
                 "unique_polyps": 0,
                 "avg_confidence": 0.0,
                 "max_confidence": 0.0,
+                "confidence_threshold": COLONOSCOPY_CONFIDENCE_THRESHOLD,
+                "min_confirm_seconds": POLYP_CONFIRM_SECONDS,
+                "min_confirm_frames": 0,
                 "completion_ratio": None,
                 "end_reason": "cancelled",
                 "explanation": None,
@@ -2382,7 +2428,7 @@ def main() -> None:
 
             advance, phase2_result = run_phase2(has_next_phase=True)
             if not advance:
-                if phase2_result.get("executed") and phase2_result["positive_frames"] == 0:
+                if phase2_result.get("executed") and phase2_result["unique_polyps"] == 0:
                     show_final_result(
                         phase1_result=phase1_result,
                         phase2_result=phase2_result,
@@ -2399,8 +2445,8 @@ def main() -> None:
                 print(f"  Fase 1 — Historial:    {phase1_result['status']}")
                 print(
                     "  Fase 2 — Colonoscopia: "
-                    f"{phase2_result['unique_polyps']} polipos unicos estimados, "
-                    f"{phase2_result['positive_frames']} frames con hallazgos"
+                    f"{phase2_result['unique_polyps']} polipos confirmados, "
+                    f"{phase2_result['positive_frames']} frames candidatos"
                 )
                 print(
                     "  Fase 3 — Foto histológica:  "

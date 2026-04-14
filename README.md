@@ -45,6 +45,7 @@ Qué te vas a encontrar:
 Notas rápidas:
 
 - En la Fase 2 puedes usar webcam o vídeo, según el flujo de la app.
+- En la Fase 2 la app separa candidatos de pólipos confirmados: un candidato solo cuenta como pólipo si supera la confianza mínima y persiste aproximadamente 1 segundo.
 - En la Fase 3 se analiza una imagen única.
 - Los screenshots se guardan en `screenshots/`.
 

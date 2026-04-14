@@ -46,7 +46,8 @@ Notas rápidas:
 
 - En la Fase 2 puedes usar webcam o vídeo, según el flujo de la app.
 - En la Fase 2 la app separa candidatos de pólipos confirmados: un candidato solo cuenta como pólipo si supera la confianza mínima y persiste aproximadamente 1 segundo.
-- En la Fase 3 se analiza una imagen única.
+- En la Fase 3 puedes seleccionar una o varias imágenes histológicas en la misma ejecución.
+- La app guarda el historial por paciente en `patients_history/` solo cuando ejecutas la consulta completa.
 - Los screenshots se guardan en `screenshots/`.
 
 Controles de vídeo:

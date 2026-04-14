@@ -1,0 +1,79 @@
+{
+  "id": "20260414_191157",
+  "kind": "consultation",
+  "title": "Consulta completa - Alex",
+  "patient_name": "Alex",
+  "created_at": "2026-04-14T19:11:57",
+  "result": {
+    "phase1": {
+      "executed": true,
+      "status": "RIESGO",
+      "is_positive": true,
+      "probability": 0.9963166451819732,
+      "demo_mode": false,
+      "numeric_fields": 1,
+      "total_fields": 15
+    },
+    "phase2": {
+      "source_mode": "Video",
+      "frames_processed": 1043,
+      "positive_frames": 97,
+      "total_detections": 97,
+      "peak_detections": 1,
+      "unique_polyps": 1,
+      "avg_confidence": 0.6284305410286815,
+      "max_confidence": 0.828709602355957,
+      "confidence_threshold": 0.5,
+      "min_confirm_seconds": 1.0,
+      "min_confirm_frames": 30,
+      "completion_ratio": 0.12017513538426086,
+      "end_reason": "button",
+      "explanation": {
+        "title": "Explicacion visual - Colonoscopia",
+        "method": "Mapa de detecciones ponderado por confianza"
+      },
+      "executed": true
+    },
+    "phase3": {
+      "image_path": "C:/Programas/Proyecto2/AiColonDiagnosis/data/dataset_colon/test/colon_n/colonn49.jpeg",
+      "image_name": "colonn49.jpeg",
+      "is_malignant": false,
+      "confidence": 0.9998027682304382,
+      "class_name": "colon_n",
+      "demo_mode": false,
+      "explanation": {
+        "title": "Explicacion visual - Histologia",
+        "method": "Grad-CAM sobre colon_n"
+      },
+      "images": [
+        {
+          "image_path": "C:/Programas/Proyecto2/AiColonDiagnosis/data/dataset_colon/test/colon_n/colonn49.jpeg",
+          "image_name": "colonn49.jpeg",
+          "is_malignant": false,
+          "confidence": 0.9998027682304382,
+          "class_name": "colon_n",
+          "demo_mode": false,
+          "explanation": {
+            "title": "Explicacion visual - Histologia",
+            "method": "Grad-CAM sobre colon_n"
+          }
+        }
+      ],
+      "total_images": 1,
+      "valid_images": 1,
+      "malignant_count": 0,
+      "non_malignant_count": 1,
+      "executed": true
+    }
+  },
+  "images": {
+    "colonoscopia_original": "patients_history\\20260414_191157_Alex\\colonoscopia_frame_original.jpg",
+    "colonoscopia_enfoque": "patients_history\\20260414_191157_Alex\\colonoscopia_enfoque.jpg",
+    "histologia_01_original": "patients_history\\20260414_191157_Alex\\histologia_01_original.jpeg",
+    "histologia_original": "patients_history\\20260414_191157_Alex\\histologia_01_original.jpeg",
+    "histologia_01_resultado": "patients_history\\20260414_191157_Alex\\histologia_01_resultado.jpg",
+    "histologia_resultado": "patients_history\\20260414_191157_Alex\\histologia_01_resultado.jpg",
+    "histologia_01_enfoque": "patients_history\\20260414_191157_Alex\\histologia_01_enfoque.jpg",
+    "histologia_enfoque": "patients_history\\20260414_191157_Alex\\histologia_01_enfoque.jpg"
+  }
+}

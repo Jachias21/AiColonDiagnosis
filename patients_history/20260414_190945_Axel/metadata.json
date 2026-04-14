@@ -1,0 +1,47 @@
+{
+  "id": "20260414_190945",
+  "kind": "consultation",
+  "title": "Consulta completa - Axel",
+  "patient_name": "Axel",
+  "created_at": "2026-04-14T19:09:45",
+  "result": {
+    "phase1": {
+      "executed": true,
+      "status": "SIN RIESGO",
+      "is_positive": false,
+      "probability": 0.009545156295929839,
+      "demo_mode": false,
+      "numeric_fields": 1,
+      "total_fields": 15
+    },
+    "phase2": {
+      "executed": false,
+      "source_mode": "No iniciado",
+      "frames_processed": 0,
+      "positive_frames": 0,
+      "total_detections": 0,
+      "peak_detections": 0,
+      "unique_polyps": 0,
+      "avg_confidence": 0.0,
+      "max_confidence": 0.0,
+      "confidence_threshold": 0.5,
+      "min_confirm_seconds": 1.0,
+      "min_confirm_frames": 0,
+      "end_reason": "cancelled"
+    },
+    "phase3": {
+      "executed": false,
+      "image_path": "",
+      "image_name": "",
+      "is_malignant": false,
+      "confidence": 0.0,
+      "class_name": "NO_EJECUTADA",
+      "demo_mode": false,
+      "images": [],
+      "total_images": 0,
+      "malignant_count": 0,
+      "non_malignant_count": 0
+    }
+  },
+  "images": {}
+}

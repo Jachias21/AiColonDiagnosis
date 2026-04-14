@@ -1,0 +1,45 @@
+{
+  "id": "20260414_185416",
+  "kind": "phase3",
+  "title": "Foto histológica",
+  "created_at": "2026-04-14T18:54:16",
+  "result": {
+    "image_path": "C:/Programas/Proyecto2/AiColonDiagnosis/data/dataset_colon/test/colon_aca/colonca15.jpeg",
+    "image_name": "colonca15.jpeg",
+    "is_malignant": true,
+    "confidence": 0.9994562268257141,
+    "class_name": "colon_aca",
+    "demo_mode": false,
+    "explanation": {
+      "title": "Explicacion visual - Histologia",
+      "method": "Grad-CAM sobre colon_aca"
+    },
+    "images": [
+      {
+        "image_path": "C:/Programas/Proyecto2/AiColonDiagnosis/data/dataset_colon/test/colon_aca/colonca15.jpeg",
+        "image_name": "colonca15.jpeg",
+        "is_malignant": true,
+        "confidence": 0.9994562268257141,
+        "class_name": "colon_aca",
+        "demo_mode": false,
+        "explanation": {
+          "title": "Explicacion visual - Histologia",
+          "method": "Grad-CAM sobre colon_aca"
+        }
+      }
+    ],
+    "total_images": 1,
+    "valid_images": 1,
+    "malignant_count": 1,
+    "non_malignant_count": 0,
+    "executed": true
+  },
+  "images": {
+    "foto_01_original": "analysis_history\\20260414_185416_phase3\\foto_01_original.jpeg",
+    "original": "analysis_history\\20260414_185416_phase3\\foto_01_original.jpeg",
+    "foto_01_resultado": "analysis_history\\20260414_185416_phase3\\foto_01_resultado.jpg",
+    "resultado": "analysis_history\\20260414_185416_phase3\\foto_01_resultado.jpg",
+    "foto_01_enfoque": "analysis_history\\20260414_185416_phase3\\foto_01_enfoque.jpg",
+    "enfoque": "analysis_history\\20260414_185416_phase3\\foto_01_enfoque.jpg"
+  }
+}

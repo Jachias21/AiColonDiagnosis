@@ -1,0 +1,30 @@
+{
+  "id": "20260414_185656",
+  "kind": "phase2",
+  "title": "Colonoscopia",
+  "created_at": "2026-04-14T18:56:56",
+  "result": {
+    "source_mode": "Video",
+    "frames_processed": 2890,
+    "positive_frames": 434,
+    "total_detections": 434,
+    "peak_detections": 1,
+    "unique_polyps": 2,
+    "avg_confidence": 0.846910469543,
+    "max_confidence": 0.9536470770835876,
+    "confidence_threshold": 0.5,
+    "min_confirm_seconds": 1.0,
+    "min_confirm_frames": 30,
+    "completion_ratio": 0.585257189145403,
+    "end_reason": "button",
+    "explanation": {
+      "title": "Explicacion visual - Colonoscopia",
+      "method": "Mapa de detecciones ponderado por confianza"
+    },
+    "executed": true
+  },
+  "images": {
+    "original": "analysis_history\\20260414_185656_phase2\\frame_original.jpg",
+    "enfoque": "analysis_history\\20260414_185656_phase2\\enfoque.jpg"
+  }
+}

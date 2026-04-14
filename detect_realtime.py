@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 import sys
 import time
 import tkinter as tk
@@ -41,6 +42,7 @@ if sys.platform == "win32":
 
 import cv2
 import numpy as np
+from PIL import Image, ImageTk
 
 # ══════════════════════════════════════════════
 # CONFIGURACIÓN
@@ -77,6 +79,7 @@ TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
 
 WEBCAM_INDEX: int = 0
 SCREENSHOTS_DIR: str = "screenshots"
+ANALYSIS_HISTORY_DIR: str = "patients_history"
 
 # Estilo de la GUI
 BG_DARK = "#1e1e2e"
@@ -519,7 +522,136 @@ def _center_cv_window(
 
     cv2.resizeWindow(window_name, view_w, view_h)
     cv2.moveWindow(window_name, x, y)
+    _focus_cv_window(window_name)
     return view_w, view_h
+
+
+def _focus_cv_window(window_name: str) -> None:
+    """Intenta traer al frente una ventana OpenCV sin romper compatibilidad."""
+    try:
+        cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
+        cv2.waitKey(1)
+        cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 0)
+    except cv2.error:
+        pass
+
+
+def _destroy_cv_window(window_name: str) -> None:
+    """Cierra una ventana OpenCV y procesa eventos pendientes."""
+    try:
+        cv2.destroyWindow(window_name)
+        cv2.waitKey(1)
+    except cv2.error:
+        pass
+
+
+def _destroy_all_cv_windows() -> None:
+    """Cierra ventanas OpenCV pendientes antes de volver a Tkinter."""
+    try:
+        cv2.destroyAllWindows()
+        cv2.waitKey(1)
+    except cv2.error:
+        pass
+
+
+def _resize_for_display(image: np.ndarray, max_width: int = 1000, max_height: int = 650) -> np.ndarray:
+    """Redimensiona una imagen para verla centrada sin ocupar toda la pantalla."""
+    h, w = image.shape[:2]
+    if h <= 0 or w <= 0:
+        return image
+    scale = min(max_width / w, max_height / h, 1.0)
+    new_w = max(int(w * scale), 1)
+    new_h = max(int(h * scale), 1)
+    if new_w == w and new_h == h:
+        return image
+    return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+
+def _bgr_to_photo(image: np.ndarray) -> ImageTk.PhotoImage:
+    """Convierte imagen OpenCV BGR a PhotoImage de Tkinter."""
+    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    return ImageTk.PhotoImage(Image.fromarray(rgb))
+
+
+def _show_image_tk_window(
+    title: str,
+    image: np.ndarray,
+    actions: list[tuple[str, str, str]],
+    max_width: int = 1000,
+    max_height: int = 650,
+    parent: tk.Tk | tk.Toplevel | None = None,
+) -> str:
+    """Muestra una imagen en Tkinter con botones reales y devuelve la acción."""
+    result = {"action": actions[0][0] if actions else "close"}
+    display = _resize_for_display(image, max_width=max_width, max_height=max_height)
+
+    root = tk.Tk() if parent is None else tk.Toplevel(parent)
+    root.title(title)
+    root.configure(bg=BG_DARK)
+    root.resizable(False, False)
+    if parent is not None:
+        root.transient(parent)
+
+    photo = _bgr_to_photo(display)
+    label = tk.Label(root, image=photo, bg=BG_DARK)
+    label.image = photo
+    label.pack(padx=12, pady=(12, 8))
+
+    buttons = tk.Frame(root, bg=BG_DARK)
+    buttons.pack(pady=(0, 12))
+
+    def make_action(action: str):
+        def _action():
+            result["action"] = action
+            root.destroy()
+        return _action
+
+    for action, text, color in actions:
+        tk.Button(
+            buttons,
+            text=text,
+            bg=color,
+            fg=BG_DARK,
+            activebackground=color,
+            command=make_action(action),
+            font=("Segoe UI", 13, "bold"),
+            width=20,
+            height=2,
+            relief="flat",
+            cursor="hand2",
+        ).pack(side="left", padx=6)
+
+    window_w = min(display.shape[1] + 24, max_width + 24)
+    window_h = min(display.shape[0] + 112, max_height + 130)
+    _center_window(root, window_w, window_h)
+    if parent is not None:
+        root.grab_set()
+        parent.wait_window(root)
+    else:
+        root.mainloop()
+    return result["action"]
+
+
+def _run_cv_modal(parent: tk.Tk | tk.Toplevel, callback) -> None:
+    """Oculta una ventana Tk mientras se muestra una ventana OpenCV modal."""
+    try:
+        parent.update_idletasks()
+        parent_w = max(parent.winfo_width(), parent.winfo_reqwidth(), 400)
+        parent_h = max(parent.winfo_height(), parent.winfo_reqheight(), 300)
+    except tk.TclError:
+        parent_w, parent_h = 560, 500
+    try:
+        parent.withdraw()
+    except tk.TclError:
+        pass
+    try:
+        callback()
+    finally:
+        try:
+            parent.deiconify()
+            _center_window(parent, parent_w, parent_h)
+        except tk.TclError:
+            pass
 
 
 def _draw_action_buttons(
@@ -529,17 +661,17 @@ def _draw_action_buttons(
 ) -> tuple[np.ndarray, dict[str, tuple[int, int, int, int]]]:
     """Dibuja una botonera simple dentro de la ventana OpenCV."""
     h, w = frame.shape[:2]
-    panel_w = 230
-    button_h = 40
-    gap = 10
-    pad = 14
-    title_h = 36
+    panel_w = 170
+    button_h = 34
+    gap = 8
+    pad = 10
+    title_h = 30
     panel_h = title_h + (len(actions) * button_h) + ((len(actions) - 1) * gap) + pad * 2
 
-    x1 = max(w - panel_w - 16, 16)
-    y1 = 16
+    x1 = max(w - panel_w - 8, 8)
+    y1 = 8
     x2 = x1 + panel_w
-    y2 = min(y1 + panel_h, h - 16)
+    y2 = min(y1 + panel_h, h - 8)
 
     overlay = frame.copy()
     cv2.rectangle(overlay, (x1, y1), (x2, y2), (20, 20, 28), -1)
@@ -547,8 +679,8 @@ def _draw_action_buttons(
     cv2.addWeighted(overlay, 0.72, frame, 0.28, 0, frame)
 
     cv2.putText(
-        frame, title, (x1 + 12, y1 + 24),
-        cv2.FONT_HERSHEY_SIMPLEX, 0.65, (240, 240, 245), 2, cv2.LINE_AA,
+        frame, title, (x1 + 10, y1 + 21),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.52, (240, 240, 245), 1, cv2.LINE_AA,
     )
 
     buttons: dict[str, tuple[int, int, int, int]] = {}
@@ -563,8 +695,8 @@ def _draw_action_buttons(
         cv2.rectangle(frame, (btn_x1, btn_y1), (btn_x2, btn_y2), color, -1)
         cv2.rectangle(frame, (btn_x1, btn_y1), (btn_x2, btn_y2), (245, 245, 245), 1)
         cv2.putText(
-            frame, label, (btn_x1 + 12, btn_y1 + 26),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.62, (18, 18, 25), 2, cv2.LINE_AA,
+            frame, label, (btn_x1 + 10, btn_y1 + 23),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (18, 18, 25), 2, cv2.LINE_AA,
         )
         btn_y += button_h + gap
 
@@ -853,12 +985,16 @@ def create_gradcam_explanation(
         handle_bw.remove()
 
 
-def show_explanation_window(explanation: dict[str, Any] | None) -> None:
+def show_explanation_window(
+    explanation: dict[str, Any] | None,
+    parent: tk.Tk | tk.Toplevel | None = None,
+) -> None:
     """Muestra la explicación visual en una ventana centrada."""
     if explanation is None:
         messagebox.showinfo(
             "Explicacion visual",
             "No hay un mapa explicativo disponible para este resultado.",
+            parent=parent,
         )
         return
 
@@ -892,37 +1028,14 @@ def show_explanation_window(explanation: dict[str, Any] | None) -> None:
     content = np.hstack([original, separator, overlay])
     canvas = np.vstack([title_bar, content])
 
-    window_name = explanation.get("title", "Explicacion visual")
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-    _center_cv_window(window_name, canvas.shape[1], canvas.shape[0], max_width=1500, max_height=900)
-
-    ui_state: dict[str, Any] = {"buttons": {}, "clicked": None}
-    _set_mouse_buttons_handler(window_name, ui_state)
-
-    while True:
-        if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
-            break
-
-        frame_to_show = canvas.copy()
-        frame_to_show, buttons = _draw_action_buttons(
-            frame_to_show,
-            [("close", "Cerrar", (70, 95, 220))],
-            title="Explicacion",
-        )
-        ui_state["buttons"] = buttons
-        cv2.imshow(window_name, frame_to_show)
-
-        key = cv2.waitKey(30) & 0xFF
-        clicked = ui_state.pop("clicked", None)
-        if key in (27, ord("q"), 13, ord(" ")):
-            break
-        if clicked == "close":
-            break
-
-    try:
-        cv2.destroyWindow(window_name)
-    except cv2.error:
-        pass
+    _show_image_tk_window(
+        explanation.get("title", "Explicacion visual"),
+        canvas,
+        [("close", "Cerrar", BTN_INACTIVE)],
+        max_width=1100,
+        max_height=720,
+        parent=parent,
+    )
 
 
 def save_screenshot(frame: np.ndarray, prefix: str = "screenshot") -> str:
@@ -933,6 +1046,185 @@ def save_screenshot(frame: np.ndarray, prefix: str = "screenshot") -> str:
     path = screenshots / f"{prefix}_{timestamp}.jpg"
     cv2.imwrite(str(path), frame)
     return str(path)
+
+
+def _json_safe(value: Any) -> Any:
+    """Convierte estructuras con arrays/paths a JSON simple."""
+    if isinstance(value, np.ndarray):
+        return None
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        safe: dict[str, Any] = {}
+        for k, v in value.items():
+            converted = _json_safe(v)
+            if converted is not None:
+                safe[k] = converted
+        return safe
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value if _json_safe(v) is not None]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _write_history_image(record_dir: Path, name: str, image: np.ndarray | None) -> str | None:
+    if image is None:
+        return None
+    path = record_dir / name
+    cv2.imwrite(str(path), image)
+    return str(path)
+
+
+def save_analysis_history(kind: str, title: str, result_data: dict[str, Any]) -> str:
+    """Guarda metadatos e imágenes de un análisis para consulta posterior."""
+    history_dir = Path(ANALYSIS_HISTORY_DIR)
+    history_dir.mkdir(exist_ok=True)
+    record_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    record_dir = history_dir / f"{record_id}_{kind}"
+    record_dir.mkdir(exist_ok=True)
+
+    saved_images: dict[str, str] = {}
+    if kind == "phase3":
+        image_results = result_data.get("images") or [result_data]
+        for idx, image_result in enumerate(image_results, start=1):
+            prefix = f"foto_{idx:02d}"
+            image_path = image_result.get("image_path")
+            if image_path and Path(image_path).exists():
+                dst = record_dir / f"{prefix}_original{Path(image_path).suffix.lower() or '.jpg'}"
+                shutil.copy2(image_path, dst)
+                saved_images[f"{prefix}_original"] = str(dst)
+                if idx == 1:
+                    saved_images["original"] = str(dst)
+            preview = _write_history_image(
+                record_dir, f"{prefix}_resultado.jpg", image_result.get("preview")
+            )
+            if preview:
+                saved_images[f"{prefix}_resultado"] = preview
+                if idx == 1:
+                    saved_images["resultado"] = preview
+            explanation = image_result.get("explanation") or {}
+            overlay = _write_history_image(
+                record_dir, f"{prefix}_enfoque.jpg", explanation.get("overlay")
+            )
+            if overlay:
+                saved_images[f"{prefix}_enfoque"] = overlay
+                if idx == 1:
+                    saved_images["enfoque"] = overlay
+    elif kind == "phase2":
+        explanation = result_data.get("explanation") or {}
+        original = _write_history_image(record_dir, "frame_original.jpg", explanation.get("original"))
+        overlay = _write_history_image(record_dir, "enfoque.jpg", explanation.get("overlay"))
+        if original:
+            saved_images["original"] = original
+        if overlay:
+            saved_images["enfoque"] = overlay
+
+    metadata = {
+        "id": record_id,
+        "kind": kind,
+        "title": title,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "result": _json_safe(result_data),
+        "images": saved_images,
+    }
+    metadata_path = record_dir / "metadata.json"
+    metadata_path.write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(f"  Historial guardado: {metadata_path}")
+    return str(metadata_path)
+
+
+def _safe_slug(text: str) -> str:
+    allowed = [c if c.isalnum() or c in ("-", "_") else "_" for c in text.strip()]
+    slug = "".join(allowed).strip("_")
+    return slug or "paciente"
+
+
+def save_patient_consultation_history(
+    patient_name: str,
+    phase1_result: dict[str, Any],
+    phase2_result: dict[str, Any],
+    phase3_result: dict[str, Any],
+) -> str:
+    """Guarda una consulta completa agrupada por paciente."""
+    history_dir = Path(ANALYSIS_HISTORY_DIR)
+    history_dir.mkdir(exist_ok=True)
+    record_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    record_dir = history_dir / f"{record_id}_{_safe_slug(patient_name)}"
+    record_dir.mkdir(exist_ok=True)
+
+    saved_images: dict[str, str] = {}
+    phase2_explanation = phase2_result.get("explanation") or {}
+    p2_original = _write_history_image(
+        record_dir, "colonoscopia_frame_original.jpg", phase2_explanation.get("original")
+    )
+    p2_focus = _write_history_image(
+        record_dir, "colonoscopia_enfoque.jpg", phase2_explanation.get("overlay")
+    )
+    if p2_original:
+        saved_images["colonoscopia_original"] = p2_original
+    if p2_focus:
+        saved_images["colonoscopia_enfoque"] = p2_focus
+
+    image_results = phase3_result.get("images") or []
+    for idx, image_result in enumerate(image_results, start=1):
+        prefix = f"histologia_{idx:02d}"
+        image_path = image_result.get("image_path")
+        if image_path and Path(image_path).exists():
+            dst = record_dir / f"{prefix}_original{Path(image_path).suffix.lower() or '.jpg'}"
+            shutil.copy2(image_path, dst)
+            saved_images[f"{prefix}_original"] = str(dst)
+            if idx == 1:
+                saved_images["histologia_original"] = str(dst)
+        preview = _write_history_image(
+            record_dir, f"{prefix}_resultado.jpg", image_result.get("preview")
+        )
+        if preview:
+            saved_images[f"{prefix}_resultado"] = preview
+            if idx == 1:
+                saved_images["histologia_resultado"] = preview
+        explanation = image_result.get("explanation") or {}
+        focus = _write_history_image(
+            record_dir, f"{prefix}_enfoque.jpg", explanation.get("overlay")
+        )
+        if focus:
+            saved_images[f"{prefix}_enfoque"] = focus
+            if idx == 1:
+                saved_images["histologia_enfoque"] = focus
+
+    metadata = {
+        "id": record_id,
+        "kind": "consultation",
+        "title": f"Consulta completa - {patient_name}",
+        "patient_name": patient_name,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "result": {
+            "phase1": _json_safe(phase1_result),
+            "phase2": _json_safe(phase2_result),
+            "phase3": _json_safe(phase3_result),
+        },
+        "images": saved_images,
+    }
+    metadata_path = record_dir / "metadata.json"
+    metadata_path.write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(f"  Historial de paciente guardado: {metadata_path}")
+    return str(metadata_path)
+
+
+def _load_history_records() -> list[dict[str, Any]]:
+    records = []
+    for path in sorted(Path(ANALYSIS_HISTORY_DIR).glob("*/metadata.json"), reverse=True):
+        try:
+            records.append(json.loads(path.read_text(encoding="utf-8")))
+        except Exception:
+            continue
+    return records
 
 
 def process_video_phase(
@@ -1136,10 +1428,7 @@ def process_video_phase(
     cap.release()
     if writer is not None:
         writer.release()
-    try:
-        cv2.destroyWindow(window_name)
-    except cv2.error:
-        pass
+    _destroy_cv_window(window_name)
 
     print(f"  Frames procesados: {frame_count}")
     print(f"  Frames con detección: {total_positives}")
@@ -1313,7 +1602,7 @@ def process_video_classification(
             paused = not paused
 
     cap.release()
-    cv2.destroyAllWindows()
+    _destroy_all_cv_windows()
 
     print(f"  Frames procesados: {frame_count}")
     print(f"  Frames con cáncer: {total_cancer}")
@@ -1390,41 +1679,19 @@ def process_image_classification(
         cv2.LINE_AA,
     )
 
-    window_name = f"{phase_label} - Imagen"
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-    _center_cv_window(window_name, display.shape[1], display.shape[0], max_height=760)
-
-    ui_state: dict[str, Any] = {"buttons": {}, "clicked": None}
-    _set_mouse_buttons_handler(window_name, ui_state)
-
-    while True:
-        if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
-            break
-
-        frame_to_show = display.copy()
-        actions = [
-            ("continue", "Continuar", (90, 170, 245)),
-            ("exit", "Cerrar vista", (70, 95, 220)),
-        ]
-        frame_to_show, buttons = _draw_action_buttons(
-            frame_to_show, actions, title="Siguiente paso"
-        )
-        ui_state["buttons"] = buttons
-        cv2.imshow(window_name, frame_to_show)
-
-        key = cv2.waitKey(30) & 0xFF
-        clicked = ui_state.pop("clicked", None)
-        if key in (13, 27, ord("q"), ord(" ")):
-            break
-        if clicked in {"continue", "exit"}:
-            break
-
-    try:
-        cv2.destroyWindow(window_name)
-    except cv2.error:
-        pass
+    _show_image_tk_window(
+        f"{phase_label} - Imagen",
+        display,
+        [
+            ("continue", "Continuar", ACCENT_BLUE),
+            ("close", "Cerrar vista", BTN_INACTIVE),
+        ],
+        max_width=1000,
+        max_height=650,
+    )
 
     print(f"  Resultado: {status_text} ({confidence:.2%})")
+    explanation = create_gradcam_explanation(model_bundle, frame, cls_name)
     return {
         "image_path": image_path,
         "image_name": Path(image_path).name,
@@ -1432,7 +1699,60 @@ def process_image_classification(
         "confidence": confidence,
         "class_name": cls_name,
         "demo_mode": model_bundle is None,
-        "explanation": create_gradcam_explanation(model_bundle, frame, cls_name),
+        "preview": display,
+        "explanation": explanation,
+    }
+
+
+def process_image_batch_classification(
+    image_paths: list[str],
+    model_bundle: dict | None,
+    phase_label: str,
+) -> dict[str, Any]:
+    """Procesa varias imágenes histológicas y devuelve un resumen agregado."""
+    image_results: list[dict[str, Any]] = []
+    for idx, image_path in enumerate(image_paths, start=1):
+        print(f"  Imagen {idx}/{len(image_paths)}")
+        image_results.append(
+            process_image_classification(
+                image_path,
+                model_bundle,
+                phase_label=f"{phase_label} ({idx}/{len(image_paths)})",
+            )
+        )
+
+    valid_results = [r for r in image_results if r.get("class_name") != "ERROR"]
+    malignant_results = [r for r in valid_results if r.get("is_malignant")]
+    best_result = max(
+        valid_results,
+        key=lambda r: float(r.get("confidence", 0.0)),
+        default=image_results[0] if image_results else {},
+    )
+    best_malignant = max(
+        malignant_results,
+        key=lambda r: float(r.get("confidence", 0.0)),
+        default=None,
+    )
+    representative = best_malignant or best_result
+
+    return {
+        "image_path": representative.get("image_path", ""),
+        "image_name": (
+            representative.get("image_name", "")
+            if len(image_results) == 1
+            else f"{len(image_results)} imágenes analizadas"
+        ),
+        "is_malignant": len(malignant_results) > 0,
+        "confidence": float(representative.get("confidence", 0.0)),
+        "class_name": representative.get("class_name", "N/A"),
+        "demo_mode": model_bundle is None,
+        "preview": representative.get("preview"),
+        "explanation": representative.get("explanation"),
+        "images": image_results,
+        "total_images": len(image_results),
+        "valid_images": len(valid_results),
+        "malignant_count": len(malignant_results),
+        "non_malignant_count": len(valid_results) - len(malignant_results),
     }
 
 
@@ -1443,9 +1763,16 @@ def process_image_classification(
 def _center_window(win: tk.Tk | tk.Toplevel, w: int, h: int) -> None:
     """Centra una ventana en la pantalla."""
     win.update_idletasks()
-    x = (win.winfo_screenwidth() // 2) - (w // 2)
-    y = (win.winfo_screenheight() // 2) - (h // 2)
-    win.geometry(f"{w}x{h}+{x}+{y}")
+    screen_w = win.winfo_screenwidth()
+    screen_h = win.winfo_screenheight()
+    req_w = max(w, win.winfo_reqwidth())
+    req_h = max(h, win.winfo_reqheight())
+    final_w = min(req_w, max(screen_w - 80, 320))
+    final_h = min(req_h, max(screen_h - 100, 240))
+    x = max((screen_w - final_w) // 2, 0)
+    y = max((screen_h - final_h) // 2, 0)
+    win.geometry(f"{final_w}x{final_h}+{x}+{y}")
+    win.update_idletasks()
     win.lift()
     try:
         win.attributes("-topmost", True)
@@ -1476,10 +1803,88 @@ def _make_button(parent, text: str, color: str, command, **kwargs: Any) -> tk.Bu
 def _back_button(parent, command) -> tk.Button:
     """Crea un botón de volver."""
     return tk.Button(
-        parent, text="← Volver al inicio", bg=BTN_INACTIVE, fg=FG_TEXT,
+        parent, text="← Volver", bg=BTN_INACTIVE, fg=FG_TEXT,
         activebackground="#6c7086", command=command,
         font=("Segoe UI", 10), width=32, height=1, relief="flat", cursor="hand2",
     )
+
+
+def ask_patient_name() -> str | None:
+    """Pide el nombre del paciente al iniciar una consulta completa."""
+    result = {"name": None}
+    root = tk.Tk()
+    root.title("Nueva consulta")
+    root.configure(bg=BG_DARK)
+    root.resizable(False, False)
+
+    tk.Label(
+        root,
+        text="Nombre del paciente",
+        font=("Segoe UI", 18, "bold"),
+        fg=FG_TEXT,
+        bg=BG_DARK,
+    ).pack(pady=(24, 8))
+    tk.Label(
+        root,
+        text="Se usará para guardar el historial completo de esta consulta.",
+        font=("Segoe UI", 10),
+        fg=FG_SUB,
+        bg=BG_DARK,
+    ).pack(pady=(0, 14))
+
+    name_var = tk.StringVar()
+    entry = tk.Entry(root, textvariable=name_var, font=("Segoe UI", 12), width=34)
+    entry.pack(pady=(0, 16))
+
+    def on_start():
+        name = name_var.get().strip()
+        if not name:
+            messagebox.showwarning(
+                "Paciente requerido",
+                "Introduce un nombre de paciente para iniciar la consulta.",
+                parent=root,
+            )
+            return
+        result["name"] = name
+        root.destroy()
+
+    def on_cancel():
+        root.destroy()
+
+    buttons = tk.Frame(root, bg=BG_DARK)
+    buttons.pack(pady=(0, 20))
+    tk.Button(
+        buttons,
+        text="Iniciar consulta",
+        bg=ACCENT_BLUE,
+        fg=BG_DARK,
+        activebackground=ACCENT_BLUE,
+        command=on_start,
+        font=("Segoe UI", 11, "bold"),
+        width=18,
+        height=2,
+        relief="flat",
+        cursor="hand2",
+    ).pack(side="left", padx=6)
+    tk.Button(
+        buttons,
+        text="Cancelar",
+        bg=BTN_INACTIVE,
+        fg=FG_TEXT,
+        activebackground="#6c7086",
+        command=on_cancel,
+        font=("Segoe UI", 11, "bold"),
+        width=14,
+        height=2,
+        relief="flat",
+        cursor="hand2",
+    ).pack(side="left", padx=6)
+
+    root.bind("<Return>", lambda _event: on_start())
+    _center_window(root, 460, 250)
+    entry.focus_set()
+    root.mainloop()
+    return result["name"]
 
 
 def _metric_row(parent, label: str, value: str, value_color: str = FG_TEXT) -> None:
@@ -1501,7 +1906,7 @@ def _metric_row(parent, label: str, value: str, value_color: str = FG_TEXT) -> N
 def show_main_menu() -> str:
     """
     Pantalla principal.
-    Devuelve 'start', 'phase1', 'phase2', 'phase3' o 'exit'.
+    Devuelve 'start', 'phase1', 'phase2', 'phase3', 'history' o 'exit'.
     """
     result = {"action": "exit"}
 
@@ -1555,6 +1960,18 @@ def show_main_menu() -> str:
         root, "▶  Diagnóstico completo (3 fases)", ACCENT_BLUE, on_start,
     ).pack(pady=(0, 12))
 
+    def on_history():
+        result["action"] = "history"
+        root.destroy()
+
+    _make_button(
+        root,
+        "📚  Historial de pacientes",
+        BTN_INACTIVE,
+        on_history,
+        height=1,
+    ).pack(pady=(0, 12))
+
     # Separador
     tk.Label(
         root, text="── o ir directamente a una fase ──",
@@ -1592,9 +2009,352 @@ def show_main_menu() -> str:
         font=("Segoe UI", 10), width=32, height=1, relief="flat", cursor="hand2",
     ).pack(pady=(0, 20))
 
-    _center_window(root, 680, 520)
+    _center_window(root, 680, 570)
     root.mainloop()
     return result["action"]
+
+
+def show_history_window() -> None:
+    """Muestra registros guardados y permite ver imágenes/enfoques."""
+    records = _load_history_records()
+
+    root = tk.Tk()
+    root.title("Historial de pacientes")
+    root.configure(bg=BG_DARK)
+    root.resizable(False, False)
+
+    tk.Label(
+        root,
+        text="📚  Historial de pacientes",
+        font=("Segoe UI", 18, "bold"),
+        fg=FG_TEXT,
+        bg=BG_DARK,
+    ).pack(pady=(22, 8))
+
+    if not records:
+        tk.Label(
+            root,
+            text="Todavía no hay consultas de pacientes guardadas.",
+            font=("Segoe UI", 11),
+            fg=FG_SUB,
+            bg=BG_DARK,
+        ).pack(pady=(20, 30))
+        _back_button(root, root.destroy).pack(pady=(0, 20))
+        _center_window(root, 520, 240)
+        root.mainloop()
+        return
+
+    list_frame = tk.Frame(root, bg=BG_CARD, padx=12, pady=12)
+    list_frame.pack(padx=24, pady=(0, 12), fill="both")
+
+    listbox = tk.Listbox(
+        list_frame,
+        width=72,
+        height=10,
+        font=("Segoe UI", 10),
+        bg="#11111b",
+        fg=FG_TEXT,
+        selectbackground=ACCENT_BLUE,
+        selectforeground=BG_DARK,
+        relief="flat",
+    )
+    listbox.pack(side="left", fill="both")
+    scrollbar = tk.Scrollbar(list_frame, command=listbox.yview)
+    scrollbar.pack(side="right", fill="y")
+    listbox.config(yscrollcommand=scrollbar.set)
+
+    for record in records:
+        result = record.get("result", {})
+        if record.get("kind") == "consultation":
+            phase2 = result.get("phase2", {})
+            phase3 = result.get("phase3", {})
+            summary = (
+                f"{record['created_at']} | {record.get('patient_name', 'Paciente')} | "
+                f"{phase2.get('unique_polyps', 0)} pólipos | "
+                f"{phase3.get('malignant_count', 0)}/{phase3.get('total_images', 0)} histología maligna"
+            )
+        elif record.get("kind") == "phase3":
+            summary = (
+                f"{record['created_at']} | Foto histológica | "
+                f"{result.get('malignant_count', 1 if result.get('is_malignant') else 0)}/"
+                f"{result.get('total_images', 1)} malignas | "
+                f"{result.get('class_name', 'N/A')} | "
+                f"{float(result.get('confidence', 0.0)):.1%}"
+            )
+        else:
+            summary = (
+                f"{record['created_at']} | Colonoscopia | "
+                f"{result.get('unique_polyps', 0)} pólipos confirmados"
+            )
+        listbox.insert("end", summary)
+
+    detail = tk.Text(
+        root,
+        width=72,
+        height=7,
+        bg=BG_CARD,
+        fg=FG_TEXT,
+        font=("Consolas", 9),
+        relief="flat",
+        wrap="word",
+    )
+    detail.pack(padx=24, pady=(0, 12))
+
+    def selected_record() -> dict[str, Any] | None:
+        selection = listbox.curselection()
+        if not selection:
+            return None
+        return records[selection[0]]
+
+    def refresh_detail(_event=None):
+        record = selected_record()
+        detail.delete("1.0", "end")
+        if record is None:
+            return
+        result = record.get("result", {})
+        detail.insert("end", f"Tipo: {record.get('title')}\n")
+        detail.insert("end", f"Fecha: {record.get('created_at')}\n")
+        if record.get("kind") == "consultation":
+            phase1 = result.get("phase1", {})
+            phase2 = result.get("phase2", {})
+            phase3 = result.get("phase3", {})
+            detail.insert("end", f"Paciente: {record.get('patient_name', '')}\n")
+            detail.insert("end", f"Fase 1: {phase1.get('status', 'N/A')} ({float(phase1.get('probability', 0.0)):.1%})\n")
+            detail.insert("end", f"Fase 2: {phase2.get('unique_polyps', 0)} pólipos confirmados\n")
+            detail.insert("end", f"Fase 3: {phase3.get('malignant_count', 0)}/{phase3.get('total_images', 0)} imágenes malignas\n")
+            detail.insert("end", f"Clase destacada: {phase3.get('class_name', 'N/A')}\n")
+            detail.insert("end", f"Confianza destacada: {float(phase3.get('confidence', 0.0)):.1%}\n")
+        elif record.get("kind") == "phase3":
+            detail.insert("end", f"Imágenes: {result.get('total_images', 1)}\n")
+            detail.insert("end", f"Imagen destacada: {result.get('image_name', '')}\n")
+            if int(result.get("total_images", 1)) > 1:
+                detail.insert("end", f"Malignas: {result.get('malignant_count', 0)}\n")
+                detail.insert("end", f"No malignas: {result.get('non_malignant_count', 0)}\n")
+            detail.insert("end", f"Clase: {result.get('class_name', '')}\n")
+            detail.insert("end", f"Confianza: {float(result.get('confidence', 0.0)):.1%}\n")
+            detail.insert("end", f"Resultado: {'Maligna' if result.get('is_malignant') else 'No maligna'}\n")
+        else:
+            detail.insert("end", f"Pólipos confirmados: {result.get('unique_polyps', 0)}\n")
+            detail.insert("end", f"Frames candidatos: {result.get('positive_frames', 0)}\n")
+            detail.insert("end", f"Confianza máxima: {float(result.get('max_confidence', 0.0)):.1%}\n")
+
+    def show_history_image(image_key: str):
+        record = selected_record()
+        if record is None:
+            return
+        image_path = record.get("images", {}).get(image_key)
+        if not image_path or not Path(image_path).exists():
+            messagebox.showinfo("Historial", "No hay imagen disponible para este registro.")
+            return
+        image = cv2.imread(image_path)
+        if image is None:
+            messagebox.showerror("Historial", "No se pudo abrir la imagen guardada.")
+            return
+        _show_image_tk_window(
+            f"Historial - {image_key}",
+            image,
+            [("close", "Cerrar", BTN_INACTIVE)],
+            max_width=1000,
+            max_height=650,
+            parent=root,
+        )
+
+    def show_main_history_image():
+        record = selected_record()
+        if record is None:
+            return
+        images = record.get("images", {})
+        for key in ("histologia_resultado", "colonoscopia_original", "resultado", "original"):
+            if images.get(key):
+                show_history_image(key)
+                return
+        show_history_image("original")
+
+    def show_focus_history_image():
+        record = selected_record()
+        if record is None:
+            return
+        images = record.get("images", {})
+        for key in ("histologia_enfoque", "colonoscopia_enfoque", "enfoque"):
+            if images.get(key):
+                show_history_image(key)
+                return
+        show_history_image("enfoque")
+
+    def show_phase1_history():
+        record = selected_record()
+        if record is None:
+            return
+        if record.get("kind") != "consultation":
+            messagebox.showinfo("Historial", "Este registro no contiene una consulta completa.", parent=root)
+            return
+        phase1 = record.get("result", {}).get("phase1", {})
+        win = tk.Toplevel(root)
+        win.title("Historial - Fase 1")
+        win.configure(bg=BG_DARK)
+        win.resizable(False, False)
+        win.transient(root)
+        tk.Label(
+            win,
+            text=f"Fase 1 - {record.get('patient_name', 'Paciente')}",
+            font=("Segoe UI", 16, "bold"),
+            fg=ACCENT_YELLOW,
+            bg=BG_DARK,
+        ).pack(pady=(20, 12))
+        card = tk.Frame(win, bg=BG_CARD, padx=18, pady=14)
+        card.pack(padx=24, pady=(0, 16), fill="x")
+        _metric_row(card, "Estado", phase1.get("status", "N/A"))
+        _metric_row(card, "Probabilidad", f"{float(phase1.get('probability', 0.0)):.1%}")
+        _metric_row(card, "Modo demo", "Sí" if phase1.get("demo_mode") else "No")
+        _metric_row(card, "Campos totales", str(phase1.get("total_fields", 0)))
+        _back_button(win, win.destroy).pack(pady=(0, 18))
+        _center_window(win, 480, 290)
+        win.grab_set()
+        root.wait_window(win)
+
+    def show_phase2_history():
+        record = selected_record()
+        if record is None:
+            return
+        images = record.get("images", {})
+        if images.get("colonoscopia_enfoque"):
+            show_history_image("colonoscopia_enfoque")
+        elif images.get("colonoscopia_original"):
+            show_history_image("colonoscopia_original")
+        else:
+            messagebox.showinfo("Historial", "No hay imagen guardada para Fase 2.", parent=root)
+
+    def show_phase3_history():
+        record = selected_record()
+        if record is None:
+            return
+        images = record.get("images", {})
+        phase3 = record.get("result", {}).get("phase3", {})
+        image_results = phase3.get("images", [])
+        if not image_results:
+            messagebox.showinfo("Historial", "No hay imágenes guardadas para Fase 3.", parent=root)
+            return
+
+        win = tk.Toplevel(root)
+        win.title("Historial - Fase 3")
+        win.configure(bg=BG_DARK)
+        win.resizable(False, False)
+        win.transient(root)
+        tk.Label(
+            win,
+            text="Fase 3 - Fotos histológicas",
+            font=("Segoe UI", 16, "bold"),
+            fg=ACCENT_MAUVE,
+            bg=BG_DARK,
+        ).pack(pady=(20, 10))
+
+        listbox_photos = tk.Listbox(
+            win,
+            width=64,
+            height=min(max(len(image_results), 4), 10),
+            font=("Segoe UI", 10),
+            bg="#11111b",
+            fg=FG_TEXT,
+            selectbackground=ACCENT_BLUE,
+            selectforeground=BG_DARK,
+            relief="flat",
+        )
+        listbox_photos.pack(padx=20, pady=(0, 12))
+        for idx, image_result in enumerate(image_results, start=1):
+            label = "Maligna" if image_result.get("is_malignant") else "No maligna"
+            listbox_photos.insert(
+                "end",
+                f"{idx:02d}. {image_result.get('image_name', '')} | {label} | {float(image_result.get('confidence', 0.0)):.1%}",
+            )
+        listbox_photos.selection_set(0)
+
+        def selected_photo_index() -> int | None:
+            selection = listbox_photos.curselection()
+            if not selection:
+                return None
+            return int(selection[0]) + 1
+
+        def show_photo(kind: str):
+            idx = selected_photo_index()
+            if idx is None:
+                return
+            key = f"histologia_{idx:02d}_{kind}"
+            show_history_image(key)
+
+        buttons_photos = tk.Frame(win, bg=BG_DARK)
+        buttons_photos.pack(pady=(0, 18))
+        tk.Button(
+            buttons_photos,
+            text="Ver resultado",
+            bg=ACCENT_BLUE,
+            fg=BG_DARK,
+            command=lambda: show_photo("resultado"),
+            font=("Segoe UI", 10, "bold"),
+            width=16,
+            height=2,
+            relief="flat",
+            cursor="hand2",
+        ).pack(side="left", padx=6)
+        tk.Button(
+            buttons_photos,
+            text="Ver enfoque",
+            bg=ACCENT_MAUVE,
+            fg=BG_DARK,
+            command=lambda: show_photo("enfoque"),
+            font=("Segoe UI", 10, "bold"),
+            width=16,
+            height=2,
+            relief="flat",
+            cursor="hand2",
+        ).pack(side="left", padx=6)
+        _back_button(buttons_photos, win.destroy).pack(side="left", padx=6)
+        _center_window(win, 620, 390)
+        win.grab_set()
+        root.wait_window(win)
+
+    listbox.bind("<<ListboxSelect>>", refresh_detail)
+    listbox.selection_set(0)
+    refresh_detail()
+
+    buttons = tk.Frame(root, bg=BG_DARK)
+    buttons.pack(pady=(0, 18))
+    tk.Button(
+        buttons,
+        text="Ver Fase 1",
+        bg=ACCENT_YELLOW,
+        fg=BG_DARK,
+        command=show_phase1_history,
+        font=("Segoe UI", 10, "bold"),
+        width=13,
+        relief="flat",
+        cursor="hand2",
+    ).pack(side="left", padx=6)
+    tk.Button(
+        buttons,
+        text="Ver Fase 2",
+        bg=ACCENT_GREEN,
+        fg=BG_DARK,
+        command=show_phase2_history,
+        font=("Segoe UI", 10, "bold"),
+        width=13,
+        relief="flat",
+        cursor="hand2",
+    ).pack(side="left", padx=6)
+    tk.Button(
+        buttons,
+        text="Ver Fase 3",
+        bg=ACCENT_MAUVE,
+        fg=BG_DARK,
+        command=show_phase3_history,
+        font=("Segoe UI", 10, "bold"),
+        width=13,
+        relief="flat",
+        cursor="hand2",
+    ).pack(side="left", padx=6)
+    _back_button(buttons, root.destroy).pack(side="left", padx=6)
+
+    _center_window(root, 680, 560)
+    root.mainloop()
 
 
 # ── Fase 1: Selección de archivo ────────────
@@ -1863,12 +2623,12 @@ def show_video_menu(
 
 def show_image_menu(
     phase_num: int, phase_title: str, color: str
-) -> tuple[str, Optional[str]]:
+) -> tuple[str, list[str]]:
     """
     Menú para seleccionar una imagen estática.
     Devuelve ('image', path) o ('exit', None).
     """
-    result: dict = {"action": "exit", "path": None}
+    result: dict = {"action": "exit", "paths": []}
 
     root = tk.Tk()
     root.title(f"Fase {phase_num} — {phase_title}")
@@ -1881,7 +2641,7 @@ def show_image_menu(
     ).pack(pady=(25, 5))
 
     tk.Label(
-        root, text="Selecciona la imagen que quieres analizar",
+        root, text="Selecciona una o varias imágenes para analizar",
         font=("Segoe UI", 11), fg=FG_SUB, bg=BG_DARK,
     ).pack(pady=(0, 20))
     tk.Label(
@@ -1895,29 +2655,29 @@ def show_image_menu(
     ).pack(pady=(0, 16))
 
     def on_image():
-        filepath = filedialog.askopenfilename(
+        filepaths = filedialog.askopenfilenames(
             parent=root,
-            title=f"Seleccionar imagen — {phase_title}",
+            title=f"Seleccionar imágenes — {phase_title}",
             filetypes=[
                 ("Imágenes", "*.png *.jpg *.jpeg *.bmp *.tif *.tiff"),
                 ("Todos", "*.*"),
             ],
         )
-        if filepath:
+        if filepaths:
             result["action"] = "image"
-            result["path"] = filepath
+            result["paths"] = list(filepaths)
             root.destroy()
 
     def on_back():
         result["action"] = "exit"
         root.destroy()
 
-    _make_button(root, "🖼  Subir Imagen", color, on_image).pack(pady=(0, 10))
+    _make_button(root, "🖼  Subir imágenes", color, on_image).pack(pady=(0, 10))
     _back_button(root, on_back).pack(pady=(5, 20))
 
     _center_window(root, 520, 340)
     root.mainloop()
-    return result["action"], result.get("path")
+    return result["action"], result.get("paths", [])
 
 
 # ── Resultado de fase de vídeo ──────────────
@@ -2021,7 +2781,7 @@ def show_video_result(
         root.destroy()
 
     def on_explanation():
-        show_explanation_window(stats.get("explanation"))
+        show_explanation_window(stats.get("explanation"), parent=root)
 
     if stats.get("explanation") is not None:
         _make_button(
@@ -2033,14 +2793,14 @@ def show_video_result(
 
     if has_detections and has_next_phase:
         if phase_num == 2:
-            next_label = "▶  Siguiente: Análisis microscópico"
+            next_label = "▶  Siguiente"
         else:
-            next_label = "▶  Ver resultado final"
+            next_label = "▶  Siguiente"
         _make_button(root, next_label, ACCENT_MAUVE, on_next).pack(pady=(0, 8))
 
     _back_button(root, on_restart).pack(pady=(0, 20))
 
-    _center_window(root, 560, 510)
+    _center_window(root, 560, 650)
     root.mainloop()
     return result["action"]
 
@@ -2070,15 +2830,17 @@ def show_classification_result(
     is_malignant = result_data["is_malignant"]
     confidence = result_data["confidence"]
     class_name = result_data["class_name"]
+    total_images = int(result_data.get("total_images", 1))
+    malignant_count = int(result_data.get("malignant_count", 1 if is_malignant else 0))
     if is_malignant:
         color = ACCENT_RED
-        text = "⚠️  MUESTRA MALIGNA"
-        subtext = f"El modelo detecta malignidad con confianza {confidence:.1%}"
+        text = "⚠️  MUESTRA MALIGNA" if total_images == 1 else f"⚠️  {malignant_count}/{total_images} IMÁGENES MALIGNAS"
+        subtext = f"Mayor señal maligna con confianza {confidence:.1%}"
     else:
         color = ACCENT_GREEN
-        text = "✅  MUESTRA NO MALIGNA"
+        text = "✅  MUESTRA NO MALIGNA" if total_images == 1 else "✅  SIN IMÁGENES MALIGNAS"
         subtext = (
-            f"El modelo la clasifica como no maligna con confianza {confidence:.1%}"
+            f"Máxima confianza revisada {confidence:.1%}"
         )
 
     tk.Label(
@@ -2092,7 +2854,15 @@ def show_classification_result(
 
     metrics = tk.Frame(root, bg=BG_CARD, padx=18, pady=14)
     metrics.pack(padx=25, pady=(0, 16), fill="x")
-    _metric_row(metrics, "Imagen analizada", result_data["image_name"])
+    _metric_row(metrics, "Imágenes analizadas", str(total_images))
+    _metric_row(metrics, "Imagen destacada", result_data["image_name"])
+    if total_images > 1:
+        _metric_row(
+            metrics,
+            "Malignas / no malignas",
+            f"{malignant_count} / {result_data.get('non_malignant_count', 0)}",
+            ACCENT_RED if malignant_count > 0 else ACCENT_GREEN,
+        )
     _metric_row(metrics, "Clase predicha", class_name)
     _metric_row(
         metrics,
@@ -2114,9 +2884,9 @@ def show_classification_result(
     )
 
     note = (
-        "La clasificación histológica apunta a malignidad y debe revisarse clínicamente."
+        "Al menos una imagen apunta a malignidad y debe revisarse clínicamente."
         if is_malignant
-        else "La imagen no fue clasificada como maligna en esta fase."
+        else "Ninguna imagen fue clasificada como maligna en esta fase."
     )
     tk.Label(
         root, text=note,
@@ -2133,7 +2903,7 @@ def show_classification_result(
         root.destroy()
 
     def on_explanation():
-        show_explanation_window(result_data.get("explanation"))
+        show_explanation_window(result_data.get("explanation"), parent=root)
 
     if result_data.get("explanation") is not None:
         _make_button(
@@ -2150,7 +2920,7 @@ def show_classification_result(
 
     _back_button(root, on_restart).pack(pady=(0, 20))
 
-    _center_window(root, 560, 500)
+    _center_window(root, 600, 540)
     root.mainloop()
     return result["action"]
 
@@ -2204,9 +2974,9 @@ def show_final_result(
          (
              "No ejecutada"
              if not phase3_result.get("executed") else
-             f"Muestra maligna ({phase3_result['confidence']:.1%})"
+             f"{phase3_result.get('malignant_count', 1)}/{phase3_result.get('total_images', 1)} imágenes malignas ({phase3_result['confidence']:.1%})"
              if phase3_malignant else
-             f"Muestra no maligna ({phase3_result['confidence']:.1%})"
+             f"0/{phase3_result.get('total_images', 1)} imágenes malignas ({phase3_result['confidence']:.1%})"
          ),
          ACCENT_YELLOW if not phase3_result.get("executed")
          else ACCENT_RED if phase3_malignant else ACCENT_GREEN),
@@ -2388,14 +3158,6 @@ def main() -> None:
                 "total_fields": len(patient_data),
             }
 
-            # ---------------------------------------------------------
-            # NUEVO: Guardar el resultado automáticamente en /resultados
-            # Solo guardamos si realmente se ejecutó el modelo (no demo)
-            # o si quieres guardar siempre, quita la condición del 'if'
-            # ---------------------------------------------------------
-            if not phase1_result["demo_mode"]:
-                save_phase1_result(patient_data, is_pos, prob)
-
             act = show_phase1_result(
                 patient_data,
                 is_pos,
@@ -2450,10 +3212,9 @@ def main() -> None:
                 stats=phase2_stats,
                 has_next_phase=has_next_phase,
             )
-            if act == "next":
-                phase2_stats["executed"] = True
-                return True, phase2_stats
             phase2_stats["executed"] = True
+            if act == "next":
+                return True, phase2_stats
             return False, phase2_stats
 
         def run_phase3(has_next_phase: bool = False) -> tuple[bool, dict[str, Any]]:
@@ -2463,7 +3224,7 @@ def main() -> None:
             print("  FASE 3: ANÁLISIS MICROSCÓPICO")
             print("─" * 55)
 
-            act, image_path = show_image_menu(
+            act, image_paths = show_image_menu(
                 3, "Análisis Microscópico", ACCENT_MAUVE
             )
             if act == "exit":
@@ -2476,10 +3237,14 @@ def main() -> None:
                     "class_name": "NO_INICIADO",
                     "demo_mode": microscopy_model is None,
                     "explanation": None,
+                    "images": [],
+                    "total_images": 0,
+                    "malignant_count": 0,
+                    "non_malignant_count": 0,
                 }
 
-            phase3_result = process_image_classification(
-                image_path, microscopy_model,
+            phase3_result = process_image_batch_classification(
+                image_paths, microscopy_model,
                 phase_label="Fase 3: Foto histológica",
             )
             phase3_result["executed"] = True
@@ -2500,6 +3265,10 @@ def main() -> None:
 
         if action == "start":
             # ══ FLUJO COMPLETO: Fase 1 → 2 → 3 → Resultado ══
+            patient_name = ask_patient_name()
+            if patient_name is None:
+                continue
+
             default_phase2_result = {
                 "executed": False,
                 "source_mode": "No iniciado",
@@ -2526,11 +3295,21 @@ def main() -> None:
                 "class_name": "NO_EJECUTADA",
                 "demo_mode": microscopy_model is None,
                 "explanation": None,
+                "images": [],
+                "total_images": 0,
+                "malignant_count": 0,
+                "non_malignant_count": 0,
             }
 
             advance, phase1_result = run_phase1()
             if not advance:
                 if phase1_result.get("executed") and not phase1_result["is_positive"]:
+                    save_patient_consultation_history(
+                        patient_name,
+                        phase1_result,
+                        default_phase2_result,
+                        default_phase3_result,
+                    )
                     show_final_result(
                         phase1_result=phase1_result,
                         phase2_result=default_phase2_result,
@@ -2541,6 +3320,12 @@ def main() -> None:
             advance, phase2_result = run_phase2(has_next_phase=True)
             if not advance:
                 if phase2_result.get("executed") and phase2_result["unique_polyps"] == 0:
+                    save_patient_consultation_history(
+                        patient_name,
+                        phase1_result,
+                        phase2_result,
+                        default_phase3_result,
+                    )
                     show_final_result(
                         phase1_result=phase1_result,
                         phase2_result=phase2_result,
@@ -2562,14 +3347,17 @@ def main() -> None:
                 )
                 print(
                     "  Fase 3 — Foto histológica:  "
-                    + (
-                        "muestra maligna"
-                        if phase3_result["is_malignant"]
-                        else "muestra no maligna"
-                    )
+                    + f"{phase3_result.get('malignant_count', 0)}/"
+                    + f"{phase3_result.get('total_images', 1)} imágenes malignas"
                 )
                 print("═" * 55)
 
+                save_patient_consultation_history(
+                    patient_name,
+                    phase1_result,
+                    phase2_result,
+                    phase3_result,
+                )
                 show_final_result(
                     phase1_result=phase1_result,
                     phase2_result=phase2_result,
@@ -2587,6 +3375,9 @@ def main() -> None:
         elif action == "phase3":
             # ══ SOLO FASE 3: Foto histológica ══
             run_phase3()
+
+        elif action == "history":
+            show_history_window()
 
         # Vuelve al menú principal automáticamente
 

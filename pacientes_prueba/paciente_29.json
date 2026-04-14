@@ -1,0 +1,17 @@
+{
+  "Nombre": "paciente_29",
+  "DNI": "10000029J",
+  "Age": 32,
+  "Gender": "M",
+  "Country": "Brazil",
+  "Urban_or_Rural": "Urban",
+  "Family_History": "Yes",
+  "Inflammatory_Bowel_Disease": "Yes",
+  "Obesity_BMI": "Normal",
+  "Diabetes": "No",
+  "Smoking_History": "No",
+  "Alcohol_Consumption": "No",
+  "Diet_Risk": "Low",
+  "Physical_Activity": "High",
+  "Screening_History": "Regular"
+}

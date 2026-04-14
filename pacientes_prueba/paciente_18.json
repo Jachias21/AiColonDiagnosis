@@ -1,0 +1,13 @@
+{
+  "Nombre": "paciente_18",
+  "DNI": "66339900S",
+  "Age": 55,
+  "Gender": "M",
+  "Country": "Spain",
+  "Urban_or_Rural": "Rural",
+  "Family_History": "No",
+  "Inflammatory_Bowel_Disease": "No",
+  "Obesity_BMI": "Obese",
+  "Diabetes": "No",
+  "Smoking_History": "Yes", "Alcohol_Consumption": "No", "Diet_Risk": "High", "Physical_Activity": "Low", "Screening_History": "Never"
+}

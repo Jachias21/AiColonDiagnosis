@@ -1,0 +1,17 @@
+{
+  "Nombre": "paciente_8",
+  "DNI": "11223344I",
+  "Age": 61,
+  "Gender": "M",
+  "Country": "Canada",
+  "Urban_or_Rural": "Urban",
+  "Family_History": "Yes",
+  "Inflammatory_Bowel_Disease": "No",
+  "Obesity_BMI": "Obese",
+  "Diabetes": "Yes",
+  "Smoking_History": "No",
+  "Alcohol_Consumption": "No",
+  "Diet_Risk": "High",
+  "Physical_Activity": "Low",
+  "Screening_History": "Never"
+}

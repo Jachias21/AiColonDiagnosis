@@ -1,0 +1,17 @@
+{
+  "Nombre": "paciente_23",
+  "DNI": "10000023D",
+  "Age": 39,
+  "Gender": "F",
+  "Country": "Italy",
+  "Urban_or_Rural": "Urban",
+  "Family_History": "No",
+  "Inflammatory_Bowel_Disease": "Yes",
+  "Obesity_BMI": "Normal",
+  "Diabetes": "No",
+  "Smoking_History": "Yes",
+  "Alcohol_Consumption": "Yes",
+  "Diet_Risk": "Moderate",
+  "Physical_Activity": "Moderate",
+  "Screening_History": "Regular"
+}

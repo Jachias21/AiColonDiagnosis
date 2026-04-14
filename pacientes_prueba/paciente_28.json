@@ -1,0 +1,17 @@
+{
+  "Nombre": "paciente_28",
+  "DNI": "10000028I",
+  "Age": 59,
+  "Gender": "F",
+  "Country": "France",
+  "Urban_or_Rural": "Urban",
+  "Family_History": "No",
+  "Inflammatory_Bowel_Disease": "No",
+  "Obesity_BMI": "Normal",
+  "Diabetes": "No",
+  "Smoking_History": "No",
+  "Alcohol_Consumption": "Yes",
+  "Diet_Risk": "Moderate",
+  "Physical_Activity": "High",
+  "Screening_History": "Regular"
+}

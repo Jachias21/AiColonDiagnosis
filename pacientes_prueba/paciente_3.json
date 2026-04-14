@@ -1,0 +1,17 @@
+{
+  "Nombre": "paciente_3",
+  "DNI": "55647382D",
+  "Age": 45,
+  "Gender": "F",
+  "Country": "USA",
+  "Urban_or_Rural": "Urban",
+  "Family_History": "No",
+  "Inflammatory_Bowel_Disease": "No",
+  "Obesity_BMI": "Obese",
+  "Diabetes": "Yes",
+  "Smoking_History": "No",
+  "Alcohol_Consumption": "No",
+  "Diet_Risk": "High",
+  "Physical_Activity": "Low",
+  "Screening_History": "Irregular"
+}

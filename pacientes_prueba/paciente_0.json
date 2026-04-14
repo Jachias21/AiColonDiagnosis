@@ -1,0 +1,19 @@
+[
+    {
+        "Nombre": "paciente_0",
+        "DNI": "47283910A",
+        "Age": 65,
+        "Gender": "M",
+        "Country": "Spain",
+        "Urban_or_Rural": "Urban",
+        "Family_History": "Yes",
+        "Inflammatory_Bowel_Disease": "No",
+        "Obesity_BMI": "Obese",
+        "Diabetes": "Yes",
+        "Smoking_History": "Yes",
+        "Alcohol_Consumption": "Yes",
+        "Diet_Risk": "High",
+        "Physical_Activity": "Low",
+        "Screening_History": "Never"
+    }
+]

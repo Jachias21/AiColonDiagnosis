@@ -1,0 +1,17 @@
+{
+  "Nombre": "paciente_20",
+  "DNI": "10000020A",
+  "Age": 62,
+  "Gender": "F",
+  "Country": "Spain",
+  "Urban_or_Rural": "Rural",
+  "Family_History": "No",
+  "Inflammatory_Bowel_Disease": "No",
+  "Obesity_BMI": "Normal",
+  "Diabetes": "No",
+  "Smoking_History": "No",
+  "Alcohol_Consumption": "No",
+  "Diet_Risk": "Low",
+  "Physical_Activity": "High",
+  "Screening_History": "Regular"
+}

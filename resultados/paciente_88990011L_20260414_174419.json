@@ -1,0 +1,25 @@
+{
+    "informacion_paciente": {
+        "Nombre": "paciente_11",
+        "DNI": "88990011L",
+        "Age": 25,
+        "Gender": "F",
+        "Country": "Mexico",
+        "Urban_or_Rural": "Urban",
+        "Family_History": "No",
+        "Inflammatory_Bowel_Disease": "Yes",
+        "Obesity_BMI": "Normal",
+        "Diabetes": "Yes",
+        "Smoking_History": "No",
+        "Alcohol_Consumption": "No",
+        "Diet_Risk": "Moderate",
+        "Physical_Activity": "Moderate",
+        "Screening_History": "Never"
+    },
+    "analisis_ia": {
+        "fecha_analisis": "2026-04-14T17:44:19.388078",
+        "riesgo_detectado": false,
+        "probabilidad_exacta": 0.013938947953556352,
+        "modelo_usado": "CatBoost_Phase1"
+    }
+}

@@ -1,0 +1,25 @@
+{
+    "informacion_paciente": {
+        "Nombre": "paciente_24",
+        "DNI": "10000024E",
+        "Age": 71,
+        "Gender": "F",
+        "Country": "Japan",
+        "Urban_or_Rural": "Rural",
+        "Family_History": "No",
+        "Inflammatory_Bowel_Disease": "No",
+        "Obesity_BMI": "Normal",
+        "Diabetes": "No",
+        "Smoking_History": "No",
+        "Alcohol_Consumption": "No",
+        "Diet_Risk": "Low",
+        "Physical_Activity": "High",
+        "Screening_History": "Regular"
+    },
+    "analisis_ia": {
+        "fecha_analisis": "2026-04-14T17:45:29.552821",
+        "riesgo_detectado": false,
+        "probabilidad_exacta": 0.3492956800573493,
+        "modelo_usado": "CatBoost_Phase1"
+    }
+}

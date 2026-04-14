@@ -32,6 +32,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import Any, Optional
+import pandas as pd
 
 # Forzar UTF-8 en stdout/stderr para Windows
 if sys.platform == "win32":
@@ -46,7 +47,7 @@ import numpy as np
 # ══════════════════════════════════════════════
 
 # Rutas a los modelos (cambiar cuando estén entrenados)
-MODEL_HISTORY: str = "models/history_model.pkl"     # Modelo de historial clínico
+MODEL_HISTORY: str = "models/catboost_crc_risk_model.cbm"     # Modelo de historial clínico
 MODEL_COLONOSCOPY: str = "models/colonoscopy.pt"    # YOLO para pólipos
 MODEL_MICROSCOPY: str = "models/microscopy.pt"      # Clasificación tejido
 MODEL_MICROSCOPY_META: str = "models/microscopy_meta.json"  # Metadata del modelo ganador
@@ -113,20 +114,20 @@ def load_yolo_model(model_path: str, label: str) -> Any:
 
 
 def load_history_model(model_path: str) -> Any:
-    """
-    Carga el modelo de historial clínico (sklearn o similar).
-    Devuelve None si no existe (modo demo).
-    """
+    """Carga el modelo CatBoost nativo."""
     model_file = Path(model_path)
     if not model_file.exists():
         print(f"  ⚠ Modelo historial no encontrado: '{model_path}' → modo DEMO")
         return None
     try:
-        import pickle
-        with open(model_file, "rb") as f:
-            model = pickle.load(f)
-        print(f"  ✓ Modelo historial cargado: {model_path}")
+        from catboost import CatBoostClassifier
+        model = CatBoostClassifier()
+        model.load_model(str(model_file))
+        print(f"  ✓ Modelo CatBoost cargado: {model_path}")
         return model
+    except ImportError:
+        print("  ✗ CatBoost no instalado. Ejecuta: uv pip install catboost")
+        return None
     except Exception as e:
         print(f"  ✗ Error cargando historial: {e}")
         return None
@@ -269,36 +270,100 @@ def load_patient_data(filepath: str) -> Optional[dict]:
         return None
 
 
-def predict_cancer_risk(
-    model: Any, patient_data: dict
-) -> tuple[bool, float]:
-    """
-    Predice si el paciente tiene riesgo de cáncer.
-    Sin modelo → siempre positivo (modo demo para poder avanzar).
-    Devuelve (tiene_riesgo, probabilidad).
-    """
+def predict_cancer_risk(model: Any, patient_data: dict) -> tuple[bool, float]:
+    """Prepara los datos del paciente y predice el riesgo con CatBoost."""
     if model is None:
-        # Modo demo: siempre pasa a la siguiente fase
         return True, 0.99
 
     try:
-        # Convertir datos numéricos a array para sklearn
-        features = np.array([
-            [float(v) for v in patient_data.values() if _is_numeric(v)]
-        ])
-        if hasattr(model, "predict_proba"):
-            proba = model.predict_proba(features)[0]
-            risk = float(proba[1]) if len(proba) > 1 else float(proba[0])
-        else:
-            pred = model.predict(features)[0]
-            risk = float(pred)
+        # 1. Definir columnas exactas en el orden que se entrenó
+        columnas = [
+            'Age', 'Gender', 'Country', 'Urban_or_Rural', 'Family_History', 
+            'Inflammatory_Bowel_Disease', 'Obesity_BMI', 'Diabetes', 
+            'Smoking_History', 'Alcohol_Consumption', 'Diet_Risk', 
+            'Physical_Activity', 'Screening_History'
+        ]
+        
+        # 2. Filtrar solo las columnas clínicas
+        datos_limpios = {col: patient_data.get(col, "Unknown") for col in columnas}
+        df_paciente = pd.DataFrame([datos_limpios])
+        
+        # 3. Mapeo Ordinal ACTUALIZADO (Con Screening_History)
+        mapeos = {
+            'Obesity_BMI': {'Normal': 0, 'Overweight': 1, 'Obese': 2},
+            'Diet_Risk': {'Low': 0, 'Moderate': 1, 'High': 2},
+            'Physical_Activity': {'Low': 0, 'Moderate': 1, 'High': 2}, 
+            'Family_History': {'No': 0, 'Yes': 1},
+            'Inflammatory_Bowel_Disease': {'No': 0, 'Yes': 1},
+            'Smoking_History': {'No': 0, 'Yes': 1},
+            'Alcohol_Consumption': {'No': 0, 'Yes': 1},
+            'Diabetes': {'No': 0, 'Yes': 1},
+            'Screening_History': {'Never': 0, 'Irregular': 1, 'Regular': 2} # ¡CLAVE!
+        }
+        
+        for col, mapping in mapeos.items():
+            if col in df_paciente.columns:
+                df_paciente[col] = df_paciente[col].map(mapping).fillna(0).astype(int)
+
+        # 4. Asegurar que las categóricas son tipo texto para CatBoost
+        cat_features = ['Gender', 'Country', 'Urban_or_Rural']
+        for col in cat_features:
+            df_paciente[col] = df_paciente[col].astype(str)
+
+        # 5. Inferencia con CatBoost
+        proba = model.predict_proba(df_paciente)[0]
+        risk = float(proba[1]) # Probabilidad de clase 1 (Riesgo)
+        
         is_positive = risk >= HISTORY_RISK_THRESHOLD
         return is_positive, risk
+        
     except Exception as e:
-        print(f"  ⚠ Error en predicción: {e}")
-        print("  → Continuando en modo demo (resultado positivo)")
+        # Hacemos un print muy visual para que, si vuelve a fallar, lo veas en la consola
+        print(f"\n❌ ERROR FATAL DE INFERENCIA EN CATBOOST: {e}\n")
         return True, 0.99
 
+def save_phase1_result(patient_data: dict, is_positive: bool, probability: float) -> None:
+    """
+    Guarda los datos del paciente y el resultado de la predicción en la carpeta /resultados.
+    """
+    import os
+    
+    # 1. Asegurar que el directorio base existe
+    results_dir = Path("resultados")
+    results_dir.mkdir(exist_ok=True)
+    
+    # 2. Generar un nombre de archivo único
+    # Intentamos usar el DNI o el Nombre si existen. Si no, usamos un timestamp.
+    identifier = patient_data.get("DNI", patient_data.get("Nombre", ""))
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    if identifier:
+        # Limpiamos el identificador para que sea válido como nombre de archivo
+        safe_id = "".join(c for c in str(identifier) if c.isalnum() or c in (' ', '_')).replace(' ', '_')
+        filename = f"paciente_{safe_id}_{timestamp}.json"
+    else:
+        filename = f"paciente_anon_{timestamp}.json"
+        
+    filepath = results_dir / filename
+    
+    # 3. Preparar el diccionario de salida
+    output_data = {
+        "informacion_paciente": patient_data,
+        "analisis_ia": {
+            "fecha_analisis": datetime.now().isoformat(),
+            "riesgo_detectado": bool(is_positive),
+            "probabilidad_exacta": float(probability),
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    }
+    
+    # 4. Guardar en JSON
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(output_data, f, indent=4, ensure_ascii=False)
+        print(f"  💾 Resultado guardado en: {filepath}")
+    except Exception as e:
+        print(f"  ⚠ Error al guardar el resultado: {e}")
 
 def _is_numeric(value) -> bool:
     """Comprueba si un valor es convertible a float."""
@@ -1201,10 +1266,10 @@ def show_phase1_result(
     is_positive: bool,
     probability: float,
     demo_mode: bool = False,
-    numeric_fields: int = 0,
+    numeric_fields: int = 0, # Mantenemos el parámetro para no romper llamadas anteriores
 ) -> str:
     """
-    Muestra el resultado de la Fase 1.
+    Muestra el resultado de la Fase 1 priorizando variables clínicas de alto impacto.
     Devuelve 'next' o 'restart'.
     """
     result = {"action": "restart"}
@@ -1215,15 +1280,50 @@ def show_phase1_result(
     root.resizable(False, False)
 
     tk.Label(
-        root, text="📋  Resultado del análisis",
+        root, text="📋  Resultado del análisis clínico",
         font=("Segoe UI", 16, "bold"), fg=ACCENT_YELLOW, bg=BG_DARK,
     ).pack(pady=(20, 10))
 
-    # Datos del paciente (resumen, máximo 8 campos)
+    # --- NUEVA LÓGICA: Priorización de variables para el médico ---
     data_frame = tk.Frame(root, bg=BG_CARD, padx=15, pady=10)
     data_frame.pack(padx=25, pady=5, fill="x")
 
-    for key, value in list(patient_data.items())[:8]:
+    # Lista de campos clave que el médico NECESITA ver de un vistazo
+    campos_clave = [
+        'Nombre', 'DNI', 'Age', 'Gender', 'Family_History', 
+        'Inflammatory_Bowel_Disease', 'Obesity_BMI', 'Diabetes'
+    ]
+    
+    # Nombres amigables para la interfaz (opcional pero recomendado)
+    nombres_amigables = {
+        'Age': 'Edad',
+        'Gender': 'Género',
+        'Family_History': 'Historial Familiar',
+        'Inflammatory_Bowel_Disease': 'Enf. Inflamatoria (IBD)',
+        'Obesity_BMI': 'Nivel de Obesidad'
+    }
+
+    campos_a_mostrar = {}
+    
+    # 1. Extraer primero los campos prioritarios (máximo 8)
+    for campo in campos_clave:
+        if campo in patient_data:
+            etiqueta = nombres_amigables.get(campo, campo)
+            campos_a_mostrar[etiqueta] = patient_data[campo]
+            if len(campos_a_mostrar) >= 8:
+                break
+
+    # 2. Si hay menos de 8, rellenamos con el resto de datos disponibles
+    if len(campos_a_mostrar) < 8:
+        for k, v in patient_data.items():
+            etiqueta = nombres_amigables.get(k, k)
+            if etiqueta not in campos_a_mostrar:
+                campos_a_mostrar[etiqueta] = v
+            if len(campos_a_mostrar) >= 8:
+                break
+
+    # Dibujar la tabla de datos del paciente
+    for key, value in campos_a_mostrar.items():
         row = tk.Frame(data_frame, bg=BG_CARD)
         row.pack(fill="x", pady=1)
         tk.Label(
@@ -1235,10 +1335,13 @@ def show_phase1_result(
             fg=FG_TEXT, bg=BG_CARD, anchor="w",
         ).pack(side="left")
 
+    # --- MÉTRICAS ACTUALIZADAS ---
     analysis_frame = tk.Frame(root, bg=BG_CARD, padx=15, pady=12)
     analysis_frame.pack(padx=25, pady=(8, 5), fill="x")
-    _metric_row(analysis_frame, "Campos cargados", str(len(patient_data)))
-    _metric_row(analysis_frame, "Campos numéricos usados", str(numeric_fields))
+    
+    _metric_row(analysis_frame, "Datos procesados", str(len(patient_data)))
+    # Quitamos lo de 'Campos numéricos' porque CatBoost usa texto y números nativamente
+    _metric_row(analysis_frame, "Variables clínicas evaluadas", "13 (CatBoost)")
     _metric_row(
         analysis_frame,
         "Probabilidad estimada",
@@ -1248,7 +1351,7 @@ def show_phase1_result(
     _metric_row(
         analysis_frame,
         "Modo de ejecución",
-        "Demo (sin modelo clínico)" if demo_mode else "Modelo cargado",
+        "Demo (sin modelo clínico)" if demo_mode else "Motor de Riesgo Activo",
         ACCENT_YELLOW if demo_mode else ACCENT_GREEN,
     )
 
@@ -1256,11 +1359,11 @@ def show_phase1_result(
     if is_positive:
         color = ACCENT_RED
         text = f"⚠️  RIESGO DETECTADO  ({probability:.0%})"
-        subtext = "Se recomienda proceder a colonoscopia"
+        subtext = "Se requiere confirmación diagnóstica (Fase 2)"
     else:
         color = ACCENT_GREEN
         text = f"✅  SIN RIESGO  ({probability:.0%})"
-        subtext = "No se detectaron indicios de riesgo"
+        subtext = "Probabilidad basal normal. No requiere intervención."
 
     tk.Label(root, text="", bg=BG_DARK).pack(pady=3)
     tk.Label(
@@ -1296,7 +1399,7 @@ def show_phase1_result(
 
     _back_button(root, on_restart).pack(pady=(0, 15))
 
-    _center_window(root, 540, 620)
+    _center_window(root, 540, 640) # Aumentado ligeramente para evitar recortes
     root.mainloop()
     return result["action"]
 
@@ -1843,6 +1946,7 @@ def main() -> None:
             numeric_fields = sum(1 for v in patient_data.values() if _is_numeric(v))
             st = "RIESGO" if is_pos else "SIN RIESGO"
             print(f"  Resultado: {st} ({prob:.2%})")
+            
             phase1_result = {
                 "executed": True,
                 "status": st,
@@ -1852,6 +1956,14 @@ def main() -> None:
                 "numeric_fields": numeric_fields,
                 "total_fields": len(patient_data),
             }
+
+            # ---------------------------------------------------------
+            # NUEVO: Guardar el resultado automáticamente en /resultados
+            # Solo guardamos si realmente se ejecutó el modelo (no demo)
+            # o si quieres guardar siempre, quita la condición del 'if'
+            # ---------------------------------------------------------
+            if not phase1_result["demo_mode"]:
+                save_phase1_result(patient_data, is_pos, prob)
 
             act = show_phase1_result(
                 patient_data,

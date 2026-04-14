@@ -1,0 +1,17 @@
+{
+  "Nombre": "paciente_17",
+  "DNI": "11447722R",
+  "Age": 22,
+  "Gender": "F",
+  "Country": "Germany",
+  "Urban_or_Rural": "Urban",
+  "Family_History": "No",
+  "Inflammatory_Bowel_Disease": "No",
+  "Obesity_BMI": "Normal",
+  "Diabetes": "No",
+  "Smoking_History": "No",
+  "Alcohol_Consumption": "No",
+  "Diet_Risk": "Low",
+  "Physical_Activity": "High",
+  "Screening_History": "Regular"
+}

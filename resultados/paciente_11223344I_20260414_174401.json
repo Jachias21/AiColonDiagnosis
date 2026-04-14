@@ -1,0 +1,25 @@
+{
+    "informacion_paciente": {
+        "Nombre": "paciente_8",
+        "DNI": "11223344I",
+        "Age": 61,
+        "Gender": "M",
+        "Country": "Canada",
+        "Urban_or_Rural": "Urban",
+        "Family_History": "Yes",
+        "Inflammatory_Bowel_Disease": "No",
+        "Obesity_BMI": "Obese",
+        "Diabetes": "Yes",
+        "Smoking_History": "No",
+        "Alcohol_Consumption": "No",
+        "Diet_Risk": "High",
+        "Physical_Activity": "Low",
+        "Screening_History": "Never"
+    },
+    "analisis_ia": {
+        "fecha_analisis": "2026-04-14T17:44:01.347389",
+        "riesgo_detectado": true,
+        "probabilidad_exacta": 0.5864736179975105,
+        "modelo_usado": "CatBoost_Phase1"
+    }
+}

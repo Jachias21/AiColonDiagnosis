@@ -1,0 +1,17 @@
+{
+  "Nombre": "paciente_11",
+  "DNI": "88990011L",
+  "Age": 25,
+  "Gender": "F",
+  "Country": "Mexico",
+  "Urban_or_Rural": "Urban",
+  "Family_History": "No",
+  "Inflammatory_Bowel_Disease": "Yes",
+  "Obesity_BMI": "Normal",
+  "Diabetes": "Yes",
+  "Smoking_History": "No",
+  "Alcohol_Consumption": "No",
+  "Diet_Risk": "Moderate",
+  "Physical_Activity": "Moderate",
+  "Screening_History": "Never"
+}

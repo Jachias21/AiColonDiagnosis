@@ -1,0 +1,19 @@
+[
+    {
+        "Nombre": "paciente_1",
+        "DNI": "19283746B",
+        "Age": 28,
+        "Gender": "F",
+        "Country": "UK",
+        "Urban_or_Rural": "Rural",
+        "Family_History": "No",
+        "Inflammatory_Bowel_Disease": "No",
+        "Obesity_BMI": "Normal",
+        "Diabetes": "No",
+        "Smoking_History": "No",
+        "Alcohol_Consumption": "No",
+        "Diet_Risk": "Low",
+        "Physical_Activity": "High",
+        "Screening_History": "Regular"
+    }
+]

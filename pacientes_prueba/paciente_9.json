@@ -1,0 +1,17 @@
+{
+  "Nombre": "paciente_9",
+  "DNI": "66778899J",
+  "Age": 41,
+  "Gender": "F",
+  "Country": "Australia",
+  "Urban_or_Rural": "Rural",
+  "Family_History": "No",
+  "Inflammatory_Bowel_Disease": "No",
+  "Obesity_BMI": "Normal",
+  "Diabetes": "No",
+  "Smoking_History": "Yes",
+  "Alcohol_Consumption": "No",
+  "Diet_Risk": "Moderate",
+  "Physical_Activity": "High",
+  "Screening_History": "Regular"
+}

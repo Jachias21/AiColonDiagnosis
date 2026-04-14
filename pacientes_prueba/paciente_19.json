@@ -1,0 +1,17 @@
+{
+  "Nombre": "paciente_19",
+  "DNI": "00998877T",
+  "Age": 43,
+  "Gender": "F",
+  "Country": "Canada",
+  "Urban_or_Rural": "Urban",
+  "Family_History": "Yes",
+  "Inflammatory_Bowel_Disease": "No",
+  "Obesity_BMI": "Normal",
+  "Diabetes": "No",
+  "Smoking_History": "No",
+  "Alcohol_Consumption": "No",
+  "Diet_Risk": "Moderate",
+  "Physical_Activity": "Moderate",
+  "Screening_History": "Regular"
+}

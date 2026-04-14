@@ -1,0 +1,13 @@
+{
+  "Nombre": "paciente_26",
+  "DNI": "10000026G",
+  "Age": 44,
+  "Gender": "M",
+  "Country": "Spain",
+  "Urban_or_Rural": "Urban",
+  "Family_History": "Yes",
+  "Inflammatory_Bowel_Disease": "No",
+  "Obesity_BMI": "Overweight",
+  "Diabetes": "No",
+  "Smoking_History": "Yes", "Alcohol_Consumption": "No", "Diet_Risk": "Moderate", "Physical_Activity": "Moderate", "Screening_History": "Regular"
+}

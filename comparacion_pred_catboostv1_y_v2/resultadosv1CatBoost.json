@@ -1,0 +1,502 @@
+[
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_19",
+            "DNI": "00998877T",
+            "Age": 43,
+            "Gender": "F",
+            "Country": "Canada",
+            "Urban_or_Rural": "Urban",
+            "Family_History": "Yes",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Normal",
+            "Diabetes": "No",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "Moderate",
+            "Physical_Activity": "Moderate",
+            "Screening_History": "Regular"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:07:42.921557",
+            "riesgo_detectado": false,
+            "probabilidad_exacta": 0.003242301685350511,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_8",
+            "DNI": "11223344I",
+            "Age": 61,
+            "Gender": "M",
+            "Country": "Canada",
+            "Urban_or_Rural": "Urban",
+            "Family_History": "Yes",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Obese",
+            "Diabetes": "Yes",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "High",
+            "Physical_Activity": "Low",
+            "Screening_History": "Never"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:06:45.787416",
+            "riesgo_detectado": true,
+            "probabilidad_exacta": 0.8782881283687648,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_17",
+            "DNI": "11447722R",
+            "Age": 22,
+            "Gender": "F",
+            "Country": "Germany",
+            "Urban_or_Rural": "Urban",
+            "Family_History": "No",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Normal",
+            "Diabetes": "No",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "Low",
+            "Physical_Activity": "High",
+            "Screening_History": "Regular"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:07:32.471360",
+            "riesgo_detectado": false,
+            "probabilidad_exacta": 0.002305433670204168,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_1",
+            "DNI": "19283746B",
+            "Age": 28,
+            "Gender": "F",
+            "Country": "UK",
+            "Urban_or_Rural": "Rural",
+            "Family_History": "No",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Normal",
+            "Diabetes": "No",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "Low",
+            "Physical_Activity": "High",
+            "Screening_History": "Regular"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:06:08.767869",
+            "riesgo_detectado": false,
+            "probabilidad_exacta": 0.000527951775279698,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_12",
+            "DNI": "22110033M",
+            "Age": 57,
+            "Gender": "M",
+            "Country": "UK",
+            "Urban_or_Rural": "Urban",
+            "Family_History": "No",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Obese",
+            "Diabetes": "No",
+            "Smoking_History": "Yes",
+            "Alcohol_Consumption": "Yes",
+            "Diet_Risk": "High",
+            "Physical_Activity": "Low",
+            "Screening_History": "Never"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:07:05.053604",
+            "riesgo_detectado": true,
+            "probabilidad_exacta": 0.843685977592567,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_4",
+            "DNI": "22334455E",
+            "Age": 19,
+            "Gender": "M",
+            "Country": "France",
+            "Urban_or_Rural": "Rural",
+            "Family_History": "Yes",
+            "Inflammatory_Bowel_Disease": "Yes",
+            "Obesity_BMI": "Normal",
+            "Diabetes": "No",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "Low",
+            "Physical_Activity": "High",
+            "Screening_History": "Never"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:06:21.105032",
+            "riesgo_detectado": false,
+            "probabilidad_exacta": 0.028073812460497678,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_15",
+            "DNI": "33221144P",
+            "Age": 48,
+            "Gender": "F",
+            "Country": "Japan",
+            "Urban_or_Rural": "Rural",
+            "Family_History": "No",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Normal",
+            "Diabetes": "No",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "Low",
+            "Physical_Activity": "High",
+            "Screening_History": "Regular"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:07:20.441894",
+            "riesgo_detectado": false,
+            "probabilidad_exacta": 0.012913069560428083,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_6",
+            "DNI": "33445566G",
+            "Age": 52,
+            "Gender": "M",
+            "Country": "Germany",
+            "Urban_or_Rural": "Rural",
+            "Family_History": "No",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Overweight",
+            "Diabetes": "No",
+            "Smoking_History": "Yes",
+            "Alcohol_Consumption": "Yes",
+            "Diet_Risk": "Moderate",
+            "Physical_Activity": "Moderate",
+            "Screening_History": "Irregular"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:06:35.469591",
+            "riesgo_detectado": true,
+            "probabilidad_exacta": 0.9862750573696949,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_10",
+            "DNI": "44556677K",
+            "Age": 92,
+            "Gender": "M",
+            "Country": "Spain",
+            "Urban_or_Rural": "Rural",
+            "Family_History": "No",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Normal",
+            "Diabetes": "No",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "Low",
+            "Physical_Activity": "Low",
+            "Screening_History": "Irregular"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:06:54.589401",
+            "riesgo_detectado": true,
+            "probabilidad_exacta": 0.9159044726115451,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_0",
+            "DNI": "47283910A",
+            "Age": 65,
+            "Gender": "M",
+            "Country": "Spain",
+            "Urban_or_Rural": "Urban",
+            "Family_History": "Yes",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Obese",
+            "Diabetes": "Yes",
+            "Smoking_History": "Yes",
+            "Alcohol_Consumption": "Yes",
+            "Diet_Risk": "High",
+            "Physical_Activity": "Low",
+            "Screening_History": "Never"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:05:54.580434",
+            "riesgo_detectado": true,
+            "probabilidad_exacta": 0.9922970192610024,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_13",
+            "DNI": "55443322N",
+            "Age": 33,
+            "Gender": "F",
+            "Country": "USA",
+            "Urban_or_Rural": "Rural",
+            "Family_History": "No",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Overweight",
+            "Diabetes": "No",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "Moderate",
+            "Physical_Activity": "High",
+            "Screening_History": "Regular"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:07:10.069120",
+            "riesgo_detectado": false,
+            "probabilidad_exacta": 0.013026623618354716,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_3",
+            "DNI": "55647382D",
+            "Age": 45,
+            "Gender": "F",
+            "Country": "USA",
+            "Urban_or_Rural": "Urban",
+            "Family_History": "No",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Obese",
+            "Diabetes": "Yes",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "High",
+            "Physical_Activity": "Low",
+            "Screening_History": "Irregular"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:06:16.808815",
+            "riesgo_detectado": false,
+            "probabilidad_exacta": 0.016171150131235195,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_18",
+            "DNI": "66339900S",
+            "Age": 55,
+            "Gender": "M",
+            "Country": "Spain",
+            "Urban_or_Rural": "Rural",
+            "Family_History": "No",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Obese",
+            "Diabetes": "No",
+            "Smoking_History": "Yes",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "High",
+            "Physical_Activity": "Low",
+            "Screening_History": "Never"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:07:37.860285",
+            "riesgo_detectado": true,
+            "probabilidad_exacta": 0.8078197394583673,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_9",
+            "DNI": "66778899J",
+            "Age": 41,
+            "Gender": "F",
+            "Country": "Australia",
+            "Urban_or_Rural": "Rural",
+            "Family_History": "No",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Normal",
+            "Diabetes": "No",
+            "Smoking_History": "Yes",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "Moderate",
+            "Physical_Activity": "High",
+            "Screening_History": "Regular"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:06:50.447025",
+            "riesgo_detectado": false,
+            "probabilidad_exacta": 0.026088083822610155,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_16",
+            "DNI": "77665544Q",
+            "Age": 69,
+            "Gender": "M",
+            "Country": "Italy",
+            "Urban_or_Rural": "Urban",
+            "Family_History": "No",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Overweight",
+            "Diabetes": "Yes",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "Yes",
+            "Diet_Risk": "Moderate",
+            "Physical_Activity": "Low",
+            "Screening_History": "Irregular"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:07:26.323139",
+            "riesgo_detectado": true,
+            "probabilidad_exacta": 0.7868392638149211,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_7",
+            "DNI": "77889900H",
+            "Age": 38,
+            "Gender": "F",
+            "Country": "Spain",
+            "Urban_or_Rural": "Urban",
+            "Family_History": "No",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Normal",
+            "Diabetes": "No",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "Low",
+            "Physical_Activity": "High",
+            "Screening_History": "Regular"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:06:40.516726",
+            "riesgo_detectado": false,
+            "probabilidad_exacta": 0.0006118230649910313,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_2",
+            "DNI": "88374625C",
+            "Age": 72,
+            "Gender": "M",
+            "Country": "Italy",
+            "Urban_or_Rural": "Urban",
+            "Family_History": "Yes",
+            "Inflammatory_Bowel_Disease": "Yes",
+            "Obesity_BMI": "Overweight",
+            "Diabetes": "No",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "Moderate",
+            "Physical_Activity": "Moderate",
+            "Screening_History": "Regular"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:06:12.976337",
+            "riesgo_detectado": true,
+            "probabilidad_exacta": 0.7639439056818079,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_11",
+            "DNI": "88990011L",
+            "Age": 25,
+            "Gender": "F",
+            "Country": "Mexico",
+            "Urban_or_Rural": "Urban",
+            "Family_History": "No",
+            "Inflammatory_Bowel_Disease": "Yes",
+            "Obesity_BMI": "Normal",
+            "Diabetes": "Yes",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "Moderate",
+            "Physical_Activity": "Moderate",
+            "Screening_History": "Never"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:07:00.805989",
+            "riesgo_detectado": false,
+            "probabilidad_exacta": 0.021284590522047776,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_5",
+            "DNI": "99001122F",
+            "Age": 84,
+            "Gender": "F",
+            "Country": "Japan",
+            "Urban_or_Rural": "Urban",
+            "Family_History": "No",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Normal",
+            "Diabetes": "No",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "Low",
+            "Physical_Activity": "Moderate",
+            "Screening_History": "Regular"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:06:25.540507",
+            "riesgo_detectado": true,
+            "probabilidad_exacta": 0.9889286528851134,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    },
+    {
+        "informacion_paciente": {
+            "Nombre": "paciente_14",
+            "DNI": "99887766O",
+            "Age": 78,
+            "Gender": "M",
+            "Country": "France",
+            "Urban_or_Rural": "Urban",
+            "Family_History": "Yes",
+            "Inflammatory_Bowel_Disease": "No",
+            "Obesity_BMI": "Normal",
+            "Diabetes": "No",
+            "Smoking_History": "No",
+            "Alcohol_Consumption": "No",
+            "Diet_Risk": "Low",
+            "Physical_Activity": "Moderate",
+            "Screening_History": "Regular"
+        },
+        "analisis_ia": {
+            "fecha_analisis": "2026-04-13T18:07:14.327193",
+            "riesgo_detectado": false,
+            "probabilidad_exacta": 0.15422497651383246,
+            "modelo_usado": "CatBoost_Phase1"
+        }
+    }
+]

@@ -1,0 +1,17 @@
+{
+  "Nombre": "paciente_12",
+  "DNI": "22110033M",
+  "Age": 57,
+  "Gender": "M",
+  "Country": "UK",
+  "Urban_or_Rural": "Urban",
+  "Family_History": "No",
+  "Inflammatory_Bowel_Disease": "No",
+  "Obesity_BMI": "Obese",
+  "Diabetes": "No",
+  "Smoking_History": "Yes",
+  "Alcohol_Consumption": "Yes",
+  "Diet_Risk": "High",
+  "Physical_Activity": "Low",
+  "Screening_History": "Never"
+}

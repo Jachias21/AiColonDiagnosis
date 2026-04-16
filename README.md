@@ -13,7 +13,7 @@ Esto es lo que ya está montado en este repo y sí merece la pena ejecutar ahora
 - La app principal `detect_realtime.py` está lista para abrirse.
 - La Fase 2 tiene modelo real cargable: `models/colonoscopy.pt`.
 - La Fase 3 tiene modelo real cargable: `models/microscopy.pt` + `models/microscopy_meta.json`.
-- La Fase 1 no tiene todavía `models/history_model.pkl`, así que funciona en modo demo.
+- La Fase 1 usa `models/catboost_crc_risk_model.cbm` si existe; si no, funciona en modo demo.
 - Ya existen los datasets generados en `data/dataset_yolo/` y `data/dataset_colon/`.
 - Ya existen resultados de entrenamiento de colonoscopia en `train_models/model_colonoscopia/entrenamiento/`.
 
@@ -29,22 +29,29 @@ cd C:\Programas\Proyecto2\AiColonDiagnosis
 
 Este repo ya tiene `.venv`, así que puedes arrancarlo directamente sin reinstalar nada:
 
-### 1. App principal de diagnóstico
+### 1. App principal de diagnóstico (PySide6)
 
 ```powershell
-.\.venv\Scripts\python.exe .\detect_realtime.py
+.\.venv\Scripts\python.exe .\main.py
+```
+
+Si prefieres abrir directamente el script de la nueva interfaz:
+
+```powershell
+.\.venv\Scripts\python.exe .\app_pyside6.py
 ```
 
 Qué te vas a encontrar:
 
 - Menú principal con acceso al flujo completo o a cada fase por separado.
-- Fase 1: carga de datos clínicos en modo demo.
+- Fase 1: carga de datos clínicos con CatBoost si el modelo está disponible, o modo demo si falta.
 - Fase 2: detección de pólipos con el modelo real `colonoscopy.pt`.
 - Fase 3: clasificación de imagen histológica con el modelo real `microscopy.pt`.
 
 Notas rápidas:
 
 - En la Fase 2 puedes usar webcam o vídeo, según el flujo de la app.
+- En la Fase 1 puedes abrir una explicación SHAP para ver qué variables clínicas han pesado más en la predicción.
 - En la Fase 2 la app separa candidatos de pólipos confirmados: un candidato solo cuenta como pólipo si supera la confianza mínima y persiste aproximadamente 1 segundo.
 - En la Fase 3 puedes seleccionar una o varias imágenes histológicas en la misma ejecución.
 - La app guarda el historial por paciente en `patients_history/` solo cuando ejecutas la consulta completa.
@@ -56,7 +63,7 @@ Controles de vídeo:
 - `s`: guardar screenshot
 - `p`: pausar o reanudar
 
-### 2. Dashboard web
+### 2. Dashboard web (analíticas / entrenamiento)
 
 ```powershell
 .\.venv\Scripts\python.exe -m streamlit run .\dashboard.py
@@ -107,9 +114,11 @@ python .\prepare_colon_dataset.py
 
 ## Archivos importantes
 
-- `detect_realtime.py`: app principal
+- `app_pyside6.py`: app principal moderna (PySide6)
+- `detect_realtime.py`: motor original y funciones de inferencia reutilizadas por la app principal
 - `dashboard.py`: panel Streamlit
 - `main.py`: archivo de ejemplo, no es la entrada real del proyecto
+- `models/catboost_crc_risk_model.cbm`: modelo CatBoost de historial médico
 - `models/colonoscopy.pt`: modelo de colonoscopia
 - `models/microscopy.pt`: modelo de microscopía
 - `models/microscopy_meta.json`: metadata necesaria para cargar el modelo de microscopía
@@ -117,10 +126,10 @@ python .\prepare_colon_dataset.py
 
 ## Limitación actual
 
-Falta el archivo:
+Si falta el archivo:
 
 ```text
-models/history_model.pkl
+models/catboost_crc_risk_model.cbm
 ```
 
 Mientras no exista, la Fase 1 seguirá en modo demo y el flujo continuará hacia las fases siguientes.

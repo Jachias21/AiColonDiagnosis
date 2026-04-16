@@ -277,6 +277,112 @@ def load_patient_data(filepath: str) -> Optional[dict]:
         return None
 
 
+HISTORY_MODEL_COLUMNS = [
+    "Age", "Gender", "Country", "Urban_or_Rural", "Family_History",
+    "Inflammatory_Bowel_Disease", "Obesity_BMI", "Diabetes",
+    "Smoking_History", "Alcohol_Consumption", "Diet_Risk",
+    "Physical_Activity", "Screening_History",
+]
+HISTORY_CAT_FEATURES = ["Gender", "Country", "Urban_or_Rural"]
+HISTORY_FEATURE_LABELS = {
+    "Age": "Edad",
+    "Gender": "Genero",
+    "Country": "Pais",
+    "Urban_or_Rural": "Entorno",
+    "Family_History": "Historial familiar",
+    "Inflammatory_Bowel_Disease": "Enfermedad inflamatoria",
+    "Obesity_BMI": "Obesidad / BMI",
+    "Diabetes": "Diabetes",
+    "Smoking_History": "Tabaquismo",
+    "Alcohol_Consumption": "Alcohol",
+    "Diet_Risk": "Riesgo dieta",
+    "Physical_Activity": "Actividad fisica",
+    "Screening_History": "Cribado previo",
+}
+
+
+def prepare_history_dataframe(patient_data: dict) -> pd.DataFrame:
+    """Prepara los datos del paciente exactamente como espera el modelo CatBoost."""
+    datos_limpios = {col: patient_data.get(col, "Unknown") for col in HISTORY_MODEL_COLUMNS}
+    df_paciente = pd.DataFrame([datos_limpios])
+
+    mapeos = {
+        "Obesity_BMI": {"Normal": 0, "Overweight": 1, "Obese": 2},
+        "Diet_Risk": {"Low": 0, "Moderate": 1, "High": 2},
+        "Physical_Activity": {"Low": 0, "Moderate": 1, "High": 2},
+        "Family_History": {"No": 0, "Yes": 1},
+        "Inflammatory_Bowel_Disease": {"No": 0, "Yes": 1},
+        "Smoking_History": {"No": 0, "Yes": 1},
+        "Alcohol_Consumption": {"No": 0, "Yes": 1},
+        "Diabetes": {"No": 0, "Yes": 1},
+        "Screening_History": {"Never": 0, "Irregular": 1, "Regular": 2},
+    }
+
+    for col, mapping in mapeos.items():
+        if col in df_paciente.columns:
+            df_paciente[col] = df_paciente[col].map(mapping).fillna(0).astype(int)
+
+    for col in HISTORY_CAT_FEATURES:
+        df_paciente[col] = df_paciente[col].astype(str)
+
+    return df_paciente
+
+
+def explain_history_prediction(model: Any, patient_data: dict) -> dict[str, Any]:
+    """Calcula explicabilidad SHAP de CatBoost para la Fase 1."""
+    if model is None:
+        return {
+            "available": False,
+            "method": "SHAP CatBoost",
+            "message": "No hay modelo clinico cargado. La fase 1 esta en modo demo.",
+            "features": [],
+        }
+
+    try:
+        from catboost import Pool
+
+        df_paciente = prepare_history_dataframe(patient_data)
+        pool = Pool(df_paciente, cat_features=HISTORY_CAT_FEATURES)
+        shap_values = np.asarray(model.get_feature_importance(pool, type="ShapValues"))
+        if shap_values.ndim != 2 or shap_values.shape[1] < 2:
+            raise ValueError("Formato SHAP inesperado")
+
+        impacts = shap_values[0, :-1]
+        expected_value = float(shap_values[0, -1])
+        probability = float(model.predict_proba(df_paciente)[0][1])
+        features: list[dict[str, Any]] = []
+
+        for feature_name, impact in zip(HISTORY_MODEL_COLUMNS, impacts):
+            impact_value = float(impact)
+            features.append({
+                "name": feature_name,
+                "label": HISTORY_FEATURE_LABELS.get(feature_name, feature_name),
+                "value": str(patient_data.get(feature_name, "Unknown")),
+                "encoded_value": str(df_paciente.iloc[0][feature_name]),
+                "impact": impact_value,
+                "abs_impact": abs(impact_value),
+                "direction": "sube el riesgo" if impact_value >= 0 else "baja el riesgo",
+            })
+
+        features.sort(key=lambda item: item["abs_impact"], reverse=True)
+        return {
+            "available": True,
+            "method": "SHAP CatBoost",
+            "message": "Impacto de cada variable sobre la prediccion de riesgo.",
+            "expected_value": expected_value,
+            "probability": probability,
+            "features": features,
+        }
+    except Exception as e:
+        print(f"  ⚠ No se pudo calcular SHAP de Fase 1: {e}")
+        return {
+            "available": False,
+            "method": "SHAP CatBoost",
+            "message": f"No se pudo calcular la explicacion SHAP: {e}",
+            "features": [],
+        }
+
+
 def predict_cancer_risk(model: Any, patient_data: dict) -> tuple[bool, float]:
     """Prepara los datos del paciente y predice el riesgo con CatBoost."""
     if model is None:
@@ -2207,8 +2313,15 @@ def show_history_window() -> None:
         _metric_row(card, "Probabilidad", f"{float(phase1.get('probability', 0.0)):.1%}")
         _metric_row(card, "Modo demo", "Sí" if phase1.get("demo_mode") else "No")
         _metric_row(card, "Campos totales", str(phase1.get("total_fields", 0)))
+        _make_button(
+            win,
+            "Ver en que se ha fijado el modelo",
+            ACCENT_BLUE,
+            lambda: show_phase1_explanation_window(phase1.get("explanation"), parent=win),
+            width=30,
+        ).pack(pady=(0, 10))
         _back_button(win, win.destroy).pack(pady=(0, 18))
-        _center_window(win, 480, 290)
+        _center_window(win, 520, 380)
         win.grab_set()
         root.wait_window(win)
 
@@ -2411,12 +2524,81 @@ def show_phase1_menu() -> tuple[str, Optional[str]]:
 
 # ── Resultado Fase 1 ────────────────────────
 
+def show_phase1_explanation_window(
+    explanation: dict[str, Any] | None,
+    parent: tk.Tk | tk.Toplevel | None = None,
+) -> None:
+    """Muestra las variables SHAP que mas han influido en la Fase 1."""
+    win = tk.Toplevel(parent) if parent is not None else tk.Tk()
+    win.title("Explicacion visual - Fase 1")
+    win.configure(bg=BG_DARK)
+    win.resizable(False, False)
+    if parent is not None:
+        win.transient(parent)
+
+    tk.Label(
+        win,
+        text="Fase 1 - En que se ha fijado el modelo",
+        font=("Segoe UI", 16, "bold"),
+        fg=ACCENT_YELLOW,
+        bg=BG_DARK,
+    ).pack(pady=(20, 8))
+
+    available = bool(explanation and explanation.get("available"))
+    message = str((explanation or {}).get("message", "No hay explicacion disponible."))
+    probability = (explanation or {}).get("probability")
+
+    summary = tk.Frame(win, bg=BG_CARD, padx=16, pady=12)
+    summary.pack(padx=24, pady=(0, 12), fill="x")
+    _metric_row(summary, "Metodo", str((explanation or {}).get("method", "SHAP CatBoost")))
+    if probability is not None:
+        _metric_row(summary, "Probabilidad", f"{float(probability):.1%}")
+    tk.Label(
+        summary,
+        text=message,
+        font=("Segoe UI", 9),
+        fg=FG_SUB if available else ACCENT_YELLOW,
+        bg=BG_CARD,
+        wraplength=640,
+        justify="left",
+    ).pack(anchor="w", pady=(8, 0))
+
+    if available:
+        header = tk.Frame(win, bg=BG_DARK)
+        header.pack(padx=24, fill="x")
+        tk.Label(header, text="Variable", width=24, anchor="w", font=("Segoe UI", 9, "bold"), fg=FG_SUB, bg=BG_DARK).pack(side="left")
+        tk.Label(header, text="Valor", width=18, anchor="w", font=("Segoe UI", 9, "bold"), fg=FG_SUB, bg=BG_DARK).pack(side="left")
+        tk.Label(header, text="Impacto", width=12, anchor="e", font=("Segoe UI", 9, "bold"), fg=FG_SUB, bg=BG_DARK).pack(side="left")
+        tk.Label(header, text="Direccion", width=16, anchor="w", font=("Segoe UI", 9, "bold"), fg=FG_SUB, bg=BG_DARK).pack(side="left", padx=(12, 0))
+
+        rows = tk.Frame(win, bg=BG_CARD, padx=12, pady=10)
+        rows.pack(padx=24, pady=(4, 12), fill="x")
+        for feature in (explanation or {}).get("features", [])[:10]:
+            impact = float(feature.get("impact", 0.0))
+            color = ACCENT_RED if impact >= 0 else ACCENT_GREEN
+            row = tk.Frame(rows, bg=BG_CARD)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=str(feature.get("label", "")), width=24, anchor="w", font=("Segoe UI", 9, "bold"), fg=FG_TEXT, bg=BG_CARD).pack(side="left")
+            tk.Label(row, text=str(feature.get("value", ""))[:22], width=18, anchor="w", font=("Segoe UI", 9), fg=FG_SUB, bg=BG_CARD).pack(side="left")
+            tk.Label(row, text=f"{impact:+.3f}", width=12, anchor="e", font=("Segoe UI", 9, "bold"), fg=color, bg=BG_CARD).pack(side="left")
+            tk.Label(row, text=str(feature.get("direction", "")), width=16, anchor="w", font=("Segoe UI", 9), fg=color, bg=BG_CARD).pack(side="left", padx=(12, 0))
+
+    _back_button(win, win.destroy).pack(pady=(0, 18))
+    _center_window(win, 720, 560 if available else 260)
+    if parent is not None:
+        win.grab_set()
+        parent.wait_window(win)
+    else:
+        win.mainloop()
+
+
 def show_phase1_result(
     patient_data: dict,
     is_positive: bool,
     probability: float,
     demo_mode: bool = False,
     numeric_fields: int = 0, # Mantenemos el parámetro para no romper llamadas anteriores
+    explanation: dict[str, Any] | None = None,
 ) -> str:
     """
     Muestra el resultado de la Fase 1 priorizando variables clínicas de alto impacto.
@@ -2541,6 +2723,13 @@ def show_phase1_result(
     def on_restart():
         result["action"] = "restart"
         root.destroy()
+
+    _make_button(
+        root,
+        "Ver en que se ha fijado el modelo",
+        ACCENT_BLUE,
+        lambda: show_phase1_explanation_window(explanation, parent=root),
+    ).pack(pady=(0, 8))
 
     if is_positive:
         _make_button(
@@ -3144,6 +3333,7 @@ def main() -> None:
 
             print(f"  ✓ Datos cargados: {len(patient_data)} campos")
             is_pos, prob = predict_cancer_risk(history_model, patient_data)
+            phase1_explanation = explain_history_prediction(history_model, patient_data)
             numeric_fields = sum(1 for v in patient_data.values() if _is_numeric(v))
             st = "RIESGO" if is_pos else "SIN RIESGO"
             print(f"  Resultado: {st} ({prob:.2%})")
@@ -3156,6 +3346,7 @@ def main() -> None:
                 "demo_mode": history_model is None,
                 "numeric_fields": numeric_fields,
                 "total_fields": len(patient_data),
+                "explanation": phase1_explanation,
             }
 
             act = show_phase1_result(
@@ -3164,6 +3355,7 @@ def main() -> None:
                 prob,
                 demo_mode=phase1_result["demo_mode"],
                 numeric_fields=numeric_fields,
+                explanation=phase1_explanation,
             )
             if act == "next":
                 return True, phase1_result

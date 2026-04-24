@@ -1,0 +1,10 @@
+{
+  "architecture": "maskrcnn_resnet50_fpn_v2",
+  "classes": [
+    "background",
+    "polyp"
+  ],
+  "task": "instance-segmentation",
+  "score_threshold_default": 0.45,
+  "iou_threshold_eval": 0.5
+}

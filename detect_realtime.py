@@ -1108,7 +1108,7 @@ def create_detection_explanation(
     frame: np.ndarray,
     detections: list[dict],
 ) -> dict[str, Any] | None:
-    """Crea un mapa de atención simple a partir de las detecciones YOLO."""
+    """Crea un mapa de atención usando la forma real detectada cuando existe."""
     if frame is None or not detections:
         return None
 
@@ -1116,18 +1116,35 @@ def create_detection_explanation(
     heatmap = np.zeros((h, w), dtype=np.float32)
 
     for det in detections:
+        weight = max(float(det.get("confidence", 0.0)), 1e-3)
+        mask = det.get("mask")
+        contour = det.get("contour")
+
+        if mask is not None:
+            region = np.asarray(mask, dtype=bool)
+            if region.shape[:2] == heatmap.shape[:2] and np.any(region):
+                heatmap[region] += weight
+                continue
+
+        if contour is not None:
+            contour_mask = np.zeros((h, w), dtype=np.uint8)
+            cv2.drawContours(contour_mask, [contour], -1, 1, thickness=-1)
+            region = contour_mask.astype(bool)
+            if np.any(region):
+                heatmap[region] += weight
+                continue
+
         x1 = max(int(det["x1"]), 0)
         y1 = max(int(det["y1"]), 0)
         x2 = min(int(det["x2"]), w)
         y2 = min(int(det["y2"]), h)
-        if x2 <= x1 or y2 <= y1:
-            continue
-        heatmap[y1:y2, x1:x2] += float(det["confidence"])
+        if x2 > x1 and y2 > y1:
+            heatmap[y1:y2, x1:x2] += weight
 
     if not np.any(heatmap):
         return None
 
-    blur_size = max(31, (min(h, w) // 12) | 1)
+    blur_size = max(21, (min(h, w) // 18) | 1)
     heatmap = cv2.GaussianBlur(heatmap, (blur_size, blur_size), 0)
     heatmap_norm = _normalize_heatmap(heatmap)
     heatmap_color = cv2.applyColorMap(heatmap_norm, cv2.COLORMAP_JET)
@@ -1148,7 +1165,7 @@ def create_detection_explanation(
         "original": frame.copy(),
         "overlay": overlay,
         "title": "Explicacion visual - Colonoscopia",
-        "method": "Mapa de detecciones ponderado por confianza",
+        "method": "Mapa ponderado por confianza sobre mascaras o contornos detectados",
     }
 
 
@@ -2343,7 +2360,7 @@ def show_history_window() -> None:
             phase3 = result.get("phase3", {})
             summary = (
                 f"{record['created_at']} | {record.get('patient_name', 'Paciente')} | "
-                f"{phase2.get('unique_polyps', 0)} pólipos | "
+                f"Hallazgos: {'sí' if int(phase2.get('unique_polyps', 0)) > 0 else 'no'} | "
                 f"{phase3.get('malignant_count', 0)}/{phase3.get('total_images', 0)} histología maligna"
             )
         elif record.get("kind") == "phase3":
@@ -2357,7 +2374,7 @@ def show_history_window() -> None:
         else:
             summary = (
                 f"{record['created_at']} | Colonoscopia | "
-                f"{result.get('unique_polyps', 0)} pólipos confirmados"
+                f"Hallazgos detectados: {'sí' if int(result.get('unique_polyps', 0)) > 0 else 'no'}"
             )
         listbox.insert("end", summary)
 
@@ -2393,7 +2410,7 @@ def show_history_window() -> None:
             phase3 = result.get("phase3", {})
             detail.insert("end", f"Paciente: {record.get('patient_name', '')}\n")
             detail.insert("end", f"Fase 1: {phase1.get('status', 'N/A')} ({float(phase1.get('probability', 0.0)):.1%})\n")
-            detail.insert("end", f"Fase 2: {phase2.get('unique_polyps', 0)} pólipos confirmados\n")
+            detail.insert("end", f"Fase 2: Hallazgos detectados: {'sí' if int(phase2.get('unique_polyps', 0)) > 0 else 'no'}\n")
             detail.insert("end", f"Fase 3: {phase3.get('malignant_count', 0)}/{phase3.get('total_images', 0)} imágenes malignas\n")
             detail.insert("end", f"Clase destacada: {phase3.get('class_name', 'N/A')}\n")
             detail.insert("end", f"Confianza destacada: {float(phase3.get('confidence', 0.0)):.1%}\n")
@@ -2407,7 +2424,7 @@ def show_history_window() -> None:
             detail.insert("end", f"Confianza: {float(result.get('confidence', 0.0)):.1%}\n")
             detail.insert("end", f"Resultado: {'Maligna' if result.get('is_malignant') else 'No maligna'}\n")
         else:
-            detail.insert("end", f"Pólipos confirmados: {result.get('unique_polyps', 0)}\n")
+            detail.insert("end", f"Hallazgos detectados: {'sí' if int(result.get('unique_polyps', 0)) > 0 else 'no'}\n")
             detail.insert("end", f"Frames candidatos: {result.get('positive_frames', 0)}\n")
             detail.insert("end", f"Confianza máxima: {float(result.get('max_confidence', 0.0)):.1%}\n")
 
@@ -3063,11 +3080,11 @@ def show_video_result(
     has_detections = stats["unique_polyps"] > 0
     if has_detections:
         color = ACCENT_RED
-        text = f"⚠️  {stats['unique_polyps']} POLIPOS CONFIRMADOS"
+        text = "⚠️  HALLAZGOS DETECTADOS"
         subtext = "Se confirmaron regiones sospechosas persistentes durante el analisis."
     else:
         color = ACCENT_GREEN
-        text = "✅  SIN POLIPOS CONFIRMADOS"
+        text = "✅  SIN HALLAZGOS DETECTADOS"
         subtext = "Las detecciones breves o inestables se descartaron como candidatas."
 
     tk.Label(
@@ -3091,9 +3108,9 @@ def show_video_result(
     )
     _metric_row(
         metrics,
-        "Polipos confirmados",
-        str(stats["unique_polyps"]),
-        ACCENT_RED if stats["unique_polyps"] > 0 else ACCENT_GREEN,
+        "Hallazgos detectados",
+        "Si" if has_detections else "No",
+        ACCENT_RED if has_detections else ACCENT_GREEN,
     )
     _metric_row(metrics, "Detecciones totales", str(stats["total_detections"]))
     _metric_row(metrics, "Confianza minima", f"{stats['confidence_threshold']:.0%}")
@@ -3321,8 +3338,8 @@ def show_final_result(
          (
              "No ejecutada"
              if not phase2_result.get("executed") else
-              f"{phase2_result['unique_polyps']} polipos confirmados, "
-              f"{phase2_positive_frames} frames candidatos"
+             f"Hallazgos detectados: {'si' if phase2_result['unique_polyps'] > 0 else 'no'}, "
+             f"{phase2_positive_frames} frames candidatos"
          ),
          ACCENT_YELLOW if not phase2_result.get("executed")
           else ACCENT_RED if phase2_result["unique_polyps"] > 0 else ACCENT_GREEN),
@@ -3410,8 +3427,8 @@ def show_final_result(
     )
     _metric_row(
         analysis,
-        "Polipos confirmados",
-        str(phase2_result["unique_polyps"]) if phase2_result.get("executed") else "No ejecutada",
+        "Hallazgos detectados",
+        ("Si" if phase2_result["unique_polyps"] > 0 else "No") if phase2_result.get("executed") else "No ejecutada",
         ACCENT_YELLOW if not phase2_result.get("executed")
         else ACCENT_RED if phase2_result["unique_polyps"] > 0 else ACCENT_GREEN,
     )
@@ -3701,7 +3718,7 @@ def main() -> None:
                 print(f"  Fase 1 — Historial:    {phase1_result['status']}")
                 print(
                     "  Fase 2 — Colonoscopia: "
-                    f"{phase2_result['unique_polyps']} polipos confirmados, "
+                    f"hallazgos detectados: {'si' if phase2_result['unique_polyps'] > 0 else 'no'}, "
                     f"{phase2_result['positive_frames']} frames candidatos"
                 )
                 print(

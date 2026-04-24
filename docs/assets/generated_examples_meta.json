@@ -1,0 +1,11 @@
+{
+  "phase2_source_frame": "C:\\Programas\\Proyecto2\\AiColonDiagnosis\\data\\dataset_yolo\\images\\test\\pos_0465.jpg",
+  "phase2_yolo_detections": 1,
+  "phase2_unet_detections": 1,
+  "phase3_source_image": "C:\\Programas\\Proyecto2\\AiColonDiagnosis\\data\\dataset_colon\\test\\colon_n\\colonn1000.jpeg",
+  "phase3_prediction": "colon_n",
+  "phase3_probability": 0.9929646253585815,
+  "phase2_mask_path": "C:\\Programas\\Proyecto2\\AiColonDiagnosis\\data\\dataset_yolo\\masks\\test\\pos_0465.jpg",
+  "phase2_ground_truth_pixels": 53403,
+  "phase2_selection_score": 2.94604754447937
+}

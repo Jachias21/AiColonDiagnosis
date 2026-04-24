@@ -88,6 +88,8 @@ DEFAULT_PHASE2 = {
     "total_detections": 0,
     "peak_detections": 0,
     "unique_polyps": 0,
+    "current_detection_count": 0,
+    "currently_detecting": False,
     "avg_confidence": 0.0,
     "max_confidence": 0.0,
     "confidence_threshold": core.COLONOSCOPY_SEGMENTER_THRESHOLD,
@@ -165,6 +167,18 @@ def _phase2_has_confirmed_polyps(phase2: dict[str, Any]) -> bool:
     return bool(phase2.get("executed") and _safe_int(phase2.get("unique_polyps", 0)) > 0)
 
 
+def _phase2_findings_value(phase2: dict[str, Any], pending: str = "Pendiente") -> str:
+    if not phase2.get("executed"):
+        return pending
+    return "Si" if _phase2_has_confirmed_polyps(phase2) else "No"
+
+
+def _phase2_findings_status(phase2: dict[str, Any], pending: str = "Fase 2 pendiente") -> str:
+    if not phase2.get("executed"):
+        return pending
+    return "Hallazgos detectados" if _phase2_has_confirmed_polyps(phase2) else "Sin hallazgos persistentes"
+
+
 def _phase3_is_not_applicable(phase3: dict[str, Any]) -> bool:
     return bool(phase3.get("not_applicable"))
 
@@ -178,7 +192,7 @@ def _conclusion_from_results(
     phase2: dict[str, Any],
     phase3: dict[str, Any],
 ) -> tuple[str, str, str]:
-    p2_unique = _safe_int(phase2.get("unique_polyps", 0))
+    phase2_positive = _phase2_has_confirmed_polyps(phase2)
     phase3_na = _phase3_is_not_applicable(phase3)
     if phase3.get("is_malignant"):
         return (
@@ -186,19 +200,19 @@ def _conclusion_from_results(
             "La fase histologica es la senal mas fuerte del flujo actual y requiere revision medica prioritaria.",
             RED,
         )
-    if phase1.get("is_positive") and p2_unique > 0:
+    if phase1.get("is_positive") and phase2_positive:
         return (
             "Posible resultado final: caso sospechoso",
             "Hay riesgo clinico y hallazgos endoscopicos. Conviene correlacion clinica y revision experta.",
             ORANGE,
         )
-    if phase2.get("executed") and p2_unique == 0 and phase3_na:
+    if phase2.get("executed") and not phase2_positive and phase3_na:
         return (
-            "Posible resultado final: sin polipos confirmados",
-            "La colonoscopia no confirmo polipos persistentes y por eso la fase histologica no aplica en esta consulta.",
+            "Posible resultado final: sin hallazgos persistentes",
+            "La colonoscopia no confirmo hallazgos persistentes y por eso la fase histologica no aplica en esta consulta.",
             GREEN,
         )
-    if p2_unique > 0:
+    if phase2_positive:
         return (
             "Posible resultado final: hallazgos a revisar",
             "Existen hallazgos en colonoscopia, aunque la histologia no marca malignidad destacada.",
@@ -583,6 +597,7 @@ class VideoPhaseController(QObject):
         self.total_detections = 0
         self.peak_detections = 0
         self.unique_polyps = 0
+        self.current_detection_count = 0
         self.confidence_sum = 0.0
         self.max_confidence = 0.0
         self.paused = False
@@ -628,6 +643,7 @@ class VideoPhaseController(QObject):
         self.total_detections = 0
         self.peak_detections = 0
         self.unique_polyps = 0
+        self.current_detection_count = 0
         self.confidence_sum = 0.0
         self.max_confidence = 0.0
         self.paused = False
@@ -686,6 +702,8 @@ class VideoPhaseController(QObject):
             "total_detections": self.total_detections,
             "peak_detections": self.peak_detections,
             "unique_polyps": self.unique_polyps,
+            "current_detection_count": self.current_detection_count,
+            "currently_detecting": self.current_detection_count > 0,
             "avg_confidence": avg_confidence,
             "max_confidence": self.max_confidence,
             "confidence_threshold": core.COLONOSCOPY_SEGMENTER_THRESHOLD,
@@ -761,6 +779,7 @@ class VideoPhaseController(QObject):
         )
 
         detections_in_frame = len(detections)
+        self.current_detection_count = detections_in_frame
         self.active_tracks, self.next_track_id, new_unique_polyps = core._update_polyp_tracks(
             detections,
             self.active_tracks,
@@ -838,6 +857,9 @@ class VideoPhaseController(QObject):
                 "frames_processed": self.frame_count,
                 "positive_frames": self.total_positives,
                 "unique_polyps": self.unique_polyps,
+                "current_detection_count": self.current_detection_count,
+                "currently_detecting": self.current_detection_count > 0,
+                "min_confirm_frames": self.min_confirm_frames,
                 "peak_detections": self.peak_detections,
                 "max_confidence": self.max_confidence,
                 "segmenter_positive_frames": self.segmenter_positive_frames,
@@ -1361,8 +1383,8 @@ class MainWindow(QMainWindow):
         cards.setHorizontalSpacing(10)
         cards.setVerticalSpacing(10)
         self.phase2_card_frames = MetricCard("Frames procesados", BLUE)
-        self.phase2_card_candidates = MetricCard("Frames con candidatos", ORANGE)
-        self.phase2_card_polyps = MetricCard("Polipos confirmados", GREEN)
+        self.phase2_card_candidates = MetricCard("Estado actual", ORANGE)
+        self.phase2_card_polyps = MetricCard("Hallazgos detectados", GREEN)
         self.phase2_card_conf = MetricCard("Confianza maxima", RED)
         cards.addWidget(self.phase2_card_frames, 0, 0)
         cards.addWidget(self.phase2_card_candidates, 0, 1)
@@ -1433,12 +1455,17 @@ class MainWindow(QMainWindow):
         self.phase3_preview.setMinimumSize(240, 260)
         self.phase3_preview.setObjectName("videoPanel")
         self.phase3_visual_split.addWidget(self.phase3_preview)
+        self.phase3_result_preview = QLabel("La vista analizada aparecera aqui al procesar una muestra")
+        self.phase3_result_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.phase3_result_preview.setMinimumSize(240, 260)
+        self.phase3_result_preview.setObjectName("videoPanel")
+        self.phase3_visual_split.addWidget(self.phase3_result_preview)
         self.phase3_focus_preview = QLabel("El Grad-CAM aparecera aqui al procesar una muestra")
         self.phase3_focus_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.phase3_focus_preview.setMinimumSize(240, 260)
         self.phase3_focus_preview.setObjectName("videoPanel")
         self.phase3_visual_split.addWidget(self.phase3_focus_preview)
-        self.phase3_visual_split.setSizes([1, 1])
+        self.phase3_visual_split.setSizes([1, 1, 1])
         phase3_visuals.addWidget(self.phase3_visual_split, 1)
         left_layout.addLayout(phase3_visuals, 1)
         self.phase3_summary = QTextEdit()
@@ -1671,7 +1698,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "Fase 3",
-                "La Fase 2 no confirmo polipos persistentes. La consulta termina en Fase 2 y la histologia no aplica.",
+                "La Fase 2 no confirmo hallazgos persistentes. La consulta termina en Fase 2 y la histologia no aplica.",
             )
             self.stack.setCurrentWidget(self.page_report)
             return
@@ -1748,6 +1775,8 @@ class MainWindow(QMainWindow):
         self.video_label.setMaximumHeight(video_h + 30)
         self.phase3_preview.setMinimumHeight(histology_h)
         self.phase3_preview.setMaximumHeight(histology_h + 30)
+        self.phase3_result_preview.setMinimumHeight(histology_h)
+        self.phase3_result_preview.setMaximumHeight(histology_h + 30)
         self.phase3_focus_preview.setMinimumHeight(histology_h)
         self.phase3_focus_preview.setMaximumHeight(histology_h + 30)
         self.phase2_original_preview.setMinimumHeight(review_h)
@@ -1760,6 +1789,7 @@ class MainWindow(QMainWindow):
         self.phase1_feature_table.setMaximumHeight(table_h)
         self.phase3_table.setMaximumHeight(max(int(basis_h * 0.30), 180))
         self.phase3_preview.setMinimumWidth(220)
+        self.phase3_result_preview.setMinimumWidth(220)
         self.phase3_focus_preview.setMinimumWidth(220)
         self.phase2_original_preview.setMinimumWidth(220)
         self.phase2_focus_preview.setMinimumWidth(220)
@@ -1917,22 +1947,24 @@ class MainWindow(QMainWindow):
         frames = _safe_int(stats.get("frames_processed", 0))
         positive = _safe_int(stats.get("positive_frames", 0))
         unique = _safe_int(stats.get("unique_polyps", 0))
+        has_findings = unique > 0
+        current_detection_count = _safe_int(stats.get("current_detection_count", 0))
+        currently_detecting = bool(stats.get("currently_detecting", current_detection_count > 0))
         peak = _safe_int(stats.get("peak_detections", 0))
         max_conf = _safe_float(stats.get("max_confidence", 0.0))
         seg_positive = _safe_int(stats.get("segmenter_positive_frames", 0))
         seg_total = _safe_int(stats.get("segmenter_total_detections", 0))
-        seg_peak = _safe_int(stats.get("segmenter_peak_detections", 0))
-        seg_max_conf = _safe_float(stats.get("segmenter_max_confidence", 0.0))
 
         self.phase2_card_frames.set_data(str(frames), "Frames revisados hasta ahora", BLUE)
-        self.phase2_card_candidates.set_data(str(positive), "Frames con hallazgos candidatos", ORANGE)
-        self.phase2_card_polyps.set_data(str(unique), "Polipos persistentes confirmados", GREEN if unique == 0 else RED)
+        self.phase2_card_candidates.set_data("Detectando" if currently_detecting else "No detectando", f"Regiones visibles ahora: {current_detection_count}", ORANGE if currently_detecting else BLUE)
+        self.phase2_card_polyps.set_data("Si" if has_findings else "No", f"Se confirma tras {max(4, _safe_int(stats.get('min_confirm_frames', 4), 4))} frames seguidos", RED if has_findings else GREEN)
         self.phase2_card_conf.set_data(_percent(max_conf), f"Pico en un frame: {peak}", RED if max_conf >= 0.7 else YELLOW)
 
         chart_items = [
             {"label": "Frames revisados", "value": max(frames, 0), "text": str(frames), "color": BLUE},
             {"label": "Frames candidatos", "value": max(positive, 0), "text": str(positive), "color": ORANGE},
-            {"label": "Polipos confirmados", "value": max(unique, 0), "text": str(unique), "color": GREEN if unique == 0 else RED},
+            {"label": "Detectando ahora", "value": 1 if currently_detecting else 0, "text": "Si" if currently_detecting else "No", "color": ORANGE if currently_detecting else BLUE},
+            {"label": "Hallazgos detectados", "value": 1 if has_findings else 0, "text": "Si" if has_findings else "No", "color": RED if has_findings else GREEN},
             {"label": "Confianza maxima", "value": max_conf, "text": _percent(max_conf), "color": RED},
         ]
         self.phase2_chart.set_items(chart_items)
@@ -1944,16 +1976,17 @@ class MainWindow(QMainWindow):
                     f"Fuente actual: {stats.get('source_mode', self.phase2_result.get('source_mode', 'N/A'))}",
                     f"Frames revisados: {frames}",
                     f"Tasa de frames candidatos: {candidate_rate:.1%}",
-                    f"Polipos confirmados: {unique}",
+                    f"Detectando ahora: {'Si' if currently_detecting else 'No'}",
+                    f"Hallazgos persistentes: {'Si' if has_findings else 'No'}",
                     f"Confianza maxima observada: {_percent(max_conf)}",
                     "",
                     "Modelo activo:",
-                    f"UNet3+ segmentacion: {positive} frames candidatos, {seg_total} regiones, pico {peak}, confianza max {_percent(max_conf)}",
+                    f"UNet3+ segmentacion: {positive} frames candidatos, {seg_total} regiones segmentadas, pico {peak}, confianza max {_percent(max_conf)}",
                     "",
                     "Interpretacion rapida:",
                     (
                         "La exploracion presenta hallazgos persistentes y conviene revisar las regiones destacadas."
-                        if unique > 0
+                        if has_findings
                         else "De momento no hay persistencia suficiente para confirmar polipos estables."
                     ),
                 ]
@@ -1966,7 +1999,7 @@ class MainWindow(QMainWindow):
             self.phase3_result = dict(DEFAULT_PHASE3)
         else:
             self.phase3_result = self._build_phase3_not_applicable_result(
-                "La colonoscopia no confirmo polipos persistentes. La fase histologica se omite y la consulta termina en Fase 2."
+                "La colonoscopia no confirmo hallazgos persistentes. La fase histologica se omite y la consulta termina en Fase 2."
             )
         self.video_status.setText("Analisis de colonoscopia finalizado.")
         self.rewind_btn.setEnabled(False)
@@ -1987,10 +2020,10 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "Fase 3",
-                "La Fase 2 no confirmo polipos persistentes. No hay muestra que analizar en histologia.",
+                "La Fase 2 no confirmo hallazgos persistentes. No hay muestra que analizar en histologia.",
             )
             self.phase3_result = self._build_phase3_not_applicable_result(
-                "La colonoscopia no confirmo polipos persistentes. La fase histologica se omite y la consulta termina en Fase 2."
+                "La colonoscopia no confirmo hallazgos persistentes. La fase histologica se omite y la consulta termina en Fase 2."
             )
             self._refresh_all_views()
             self._autosave_snapshot("fase3-no-aplica")
@@ -2022,7 +2055,30 @@ class MainWindow(QMainWindow):
 
             display = frame.copy()
             border_color = (0, 0, 255) if is_cancer else (0, 255, 0)
+            banner_color = (24, 32, 48)
             cv2.rectangle(display, (6, 6), (display.shape[1] - 6, display.shape[0] - 6), border_color, 4)
+            cv2.rectangle(display, (0, 0), (display.shape[1], 62), banner_color, -1)
+            result_label = "MALIGNA" if is_cancer else "NO MALIGNA"
+            cv2.putText(
+                display,
+                f"{result_label} · {cls_name}",
+                (12, 26),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.72,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                display,
+                f"Confianza: {_percent(confidence)}",
+                (12, 50),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.62,
+                border_color,
+                2,
+                cv2.LINE_AA,
+            )
 
             image_results.append(
                 {
@@ -2113,7 +2169,7 @@ class MainWindow(QMainWindow):
             label_parts = [
                 f"{created} | {patient}",
                 f"P1 {_percent(phase1.get('probability', 0.0))}",
-                f"P2 {phase2.get('unique_polyps', 0)} polipos",
+                f"P2 {'si' if _phase2_has_confirmed_polyps(phase2) else 'no'} hallazgos",
             ]
             if not _phase3_is_not_applicable(phase3):
                 label_parts.append(
@@ -2154,9 +2210,9 @@ class MainWindow(QMainWindow):
             RED if phase1.get("is_positive") else GREEN,
         )
         self.consultation_card_phase2.set_data(
-            str(_safe_int(phase2.get("unique_polyps", 0))),
+            _phase2_findings_value(phase2, "No"),
             f"{_safe_int(phase2.get('positive_frames', 0))} frames candidatos",
-            RED if _safe_int(phase2.get("unique_polyps", 0)) > 0 else GREEN,
+            RED if _phase2_has_confirmed_polyps(phase2) else GREEN,
         )
         if _phase3_is_not_applicable(phase3):
             self.consultation_card_phase3.hide()
@@ -2175,7 +2231,7 @@ class MainWindow(QMainWindow):
 
         chart_items = [
             {"label": "Riesgo clinico", "value": _safe_float(phase1.get("probability", 0.0)), "text": _percent(phase1.get("probability", 0.0)), "color": RED if phase1.get("is_positive") else GREEN},
-            {"label": "Polipos confirmados", "value": _safe_int(phase2.get("unique_polyps", 0)), "text": str(_safe_int(phase2.get("unique_polyps", 0))), "color": ORANGE},
+            {"label": "Hallazgos endoscopicos", "value": 1 if _phase2_has_confirmed_polyps(phase2) else 0, "text": "Si" if _phase2_has_confirmed_polyps(phase2) else "No", "color": ORANGE if _phase2_has_confirmed_polyps(phase2) else GREEN},
             {"label": "Frames candidatos", "value": _safe_int(phase2.get("positive_frames", 0)), "text": str(_safe_int(phase2.get("positive_frames", 0))), "color": BLUE},
         ]
         if not _phase3_is_not_applicable(phase3):
@@ -2187,7 +2243,7 @@ class MainWindow(QMainWindow):
         conclusion, detail, _color = _conclusion_from_results(phase1, phase2, phase3)
         phase_lines = [
             f"- Fase 1: {phase1.get('status', 'N/A')} ({_percent(phase1.get('probability', 0.0))})",
-            f"- Fase 2: {_safe_int(phase2.get('unique_polyps', 0))} polipos confirmados",
+            f"- Fase 2: {_phase2_findings_status(phase2)}",
         ]
         if not _phase3_is_not_applicable(phase3):
             phase_lines.append(
@@ -2242,9 +2298,9 @@ class MainWindow(QMainWindow):
             RED if phase1.get("is_positive") else GREEN if phase1.get("executed") else YELLOW,
         )
         self.consultation_card_phase2.set_data(
-            str(_safe_int(phase2.get("unique_polyps", 0))) if phase2.get("executed") else "Pendiente",
-            "Polipos confirmados" if phase2.get("executed") else "Fase 2 sin ejecutar",
-            RED if _safe_int(phase2.get("unique_polyps", 0)) > 0 else GREEN if phase2.get("executed") else YELLOW,
+            _phase2_findings_value(phase2),
+            _phase2_findings_status(phase2, "Fase 2 sin ejecutar"),
+            RED if _phase2_has_confirmed_polyps(phase2) else GREEN if phase2.get("executed") else YELLOW,
         )
         if _phase3_is_not_applicable(phase3):
             self.consultation_card_phase3.hide()
@@ -2263,7 +2319,7 @@ class MainWindow(QMainWindow):
         pending_chart_items = [
             {"label": "Fases completadas", "value": completed_steps, "text": f"{completed_steps}/3", "color": ORANGE},
             {"label": "Riesgo clinico", "value": _safe_float(phase1.get("probability", 0.0)), "text": _percent(phase1.get("probability", 0.0)), "color": YELLOW},
-            {"label": "Polipos confirmados", "value": _safe_int(phase2.get("unique_polyps", 0)), "text": str(_safe_int(phase2.get("unique_polyps", 0))), "color": GREEN},
+            {"label": "Hallazgos endoscopicos", "value": 1 if _phase2_has_confirmed_polyps(phase2) else 0, "text": "Si" if _phase2_has_confirmed_polyps(phase2) else "No", "color": RED if _phase2_has_confirmed_polyps(phase2) else GREEN},
         ]
         if not _phase3_is_not_applicable(phase3):
             pending_chart_items.append(
@@ -2272,7 +2328,7 @@ class MainWindow(QMainWindow):
         self.consultation_chart.set_items(pending_chart_items)
         pending_phase_lines = [
             f"- Fase 1: {phase1.get('status', 'Pendiente') if phase1.get('executed') else 'Pendiente'}",
-            f"- Fase 2: {_safe_int(phase2.get('unique_polyps', 0))} polipos confirmados" if phase2.get("executed") else "- Fase 2: pendiente",
+            f"- Fase 2: {_phase2_findings_status(phase2)}" if phase2.get("executed") else "- Fase 2: pendiente",
         ]
         if not _phase3_is_not_applicable(phase3):
             pending_phase_lines.append(
@@ -2487,8 +2543,8 @@ class MainWindow(QMainWindow):
         if not phase2.get("executed"):
             self._set_phase2_left_mode(False)
             self.phase2_card_frames.set_data("0", "Sin exploracion", BLUE)
-            self.phase2_card_candidates.set_data("0", "Sin candidatos", ORANGE)
-            self.phase2_card_polyps.set_data("0", "Sin polipos confirmados", GREEN)
+            self.phase2_card_candidates.set_data("No detectando", "Sin video activo", BLUE)
+            self.phase2_card_polyps.set_data("No", "Sin hallazgos persistentes", GREEN)
             self.phase2_card_conf.set_data("--", "Sin confianza registrada", RED)
             self.phase2_chart.set_items([])
             self.phase2_summary.setPlainText(
@@ -2508,7 +2564,9 @@ class MainWindow(QMainWindow):
 
         frames = _safe_int(phase2.get("frames_processed", 0))
         positive = _safe_int(phase2.get("positive_frames", 0))
-        unique = _safe_int(phase2.get("unique_polyps", 0))
+        has_findings = _phase2_has_confirmed_polyps(phase2)
+        current_detection_count = _safe_int(phase2.get("current_detection_count", 0))
+        currently_detecting = bool(phase2.get("currently_detecting", current_detection_count > 0))
         peak = _safe_int(phase2.get("peak_detections", 0))
         avg_conf = _safe_float(phase2.get("avg_confidence", 0.0))
         max_conf = _safe_float(phase2.get("max_confidence", 0.0))
@@ -2520,13 +2578,15 @@ class MainWindow(QMainWindow):
         candidate_rate = positive / max(frames, 1)
 
         self.phase2_card_frames.set_data(str(frames), f"Fuente: {phase2.get('source_mode', 'N/A')}", BLUE)
-        self.phase2_card_candidates.set_data(str(positive), f"Tasa {candidate_rate:.1%}", ORANGE)
-        self.phase2_card_polyps.set_data(str(unique), f"Persistencia minima {phase2.get('min_confirm_seconds', 0)} s", RED if unique > 0 else GREEN)
+        self.phase2_card_candidates.set_data("Detectando" if currently_detecting else "No detectando", f"Estado al cerrar · regiones visibles: {current_detection_count}", ORANGE if currently_detecting else BLUE)
+        self.phase2_card_polyps.set_data("Si" if has_findings else "No", f"Persistencia minima {phase2.get('min_confirm_seconds', 0)} s", RED if has_findings else GREEN)
         self.phase2_card_conf.set_data(_percent(max_conf), f"Media {_percent(avg_conf)} | pico {peak}", RED if max_conf >= 0.75 else YELLOW)
 
         chart_items = [
             {"label": "Cobertura", "value": _safe_float(completion, 0.0), "text": _percent(completion) if completion is not None else "Webcam", "color": BLUE},
             {"label": "Frames candidatos", "value": candidate_rate, "text": f"{candidate_rate:.1%}", "color": ORANGE},
+            {"label": "Detectando al cierre", "value": 1 if currently_detecting else 0, "text": "Si" if currently_detecting else "No", "color": ORANGE if currently_detecting else BLUE},
+            {"label": "Hallazgos detectados", "value": 1 if has_findings else 0, "text": "Si" if has_findings else "No", "color": RED if has_findings else GREEN},
             {"label": "Confianza media", "value": avg_conf, "text": _percent(avg_conf), "color": CYAN},
             {"label": "Confianza maxima", "value": max_conf, "text": _percent(max_conf), "color": RED},
         ]
@@ -2536,7 +2596,8 @@ class MainWindow(QMainWindow):
             f"Fuente de analisis: {phase2.get('source_mode', 'N/A')}",
             f"Frames procesados: {frames}",
             f"Frames con candidatos: {positive} ({candidate_rate:.1%})",
-            f"Polipos confirmados: {unique}",
+            f"Detectando al cerrar: {'Si' if currently_detecting else 'No'}",
+            f"Hallazgos persistentes: {'Si' if has_findings else 'No'}",
             f"Detecciones totales: {_safe_int(phase2.get('total_detections', 0))}",
             f"Confianza media / maxima: {_percent(avg_conf)} / {_percent(max_conf)}",
         ]
@@ -2559,7 +2620,7 @@ class MainWindow(QMainWindow):
                 "Lectura orientativa:",
                 (
                     "La deteccion mantiene persistencia suficiente para marcar hallazgos que merecen verificacion."
-                    if unique > 0
+                    if has_findings
                     else "No hay persistencia suficiente para confirmar polipos estables con el umbral actual. La consulta puede cerrarse aqui sin pasar a histologia."
                 ),
             ]
@@ -2591,13 +2652,14 @@ class MainWindow(QMainWindow):
         if _phase3_is_not_applicable(phase3):
             reason = str(phase3.get("skip_reason", "La fase histologica no aplica en esta consulta."))
             self.phase3_preview_title.setText("Fase 3 omitida")
-            self.phase3_card_result.set_data("No aplicable", "Sin polipos confirmados en Fase 2", BLUE)
+            self.phase3_card_result.set_data("No aplicable", "Sin hallazgos persistentes en Fase 2", BLUE)
             self.phase3_card_conf.set_data("--", "No hay inferencia histologica", BLUE)
             self.phase3_card_volume.set_data("0", "Muestras requeridas", BLUE)
             self.phase3_card_balance.set_data("--", "Fase omitida con criterio", BLUE)
             self.phase3_chart.set_items([])
             self._set_table_rows(self.phase3_table, [])
             self._set_preview_label_image(self.phase3_preview, None, "No hay imagen histologica porque la fase no aplica")
+            self._set_preview_label_image(self.phase3_result_preview, None, "No hay vista analizada porque la fase no aplica")
             self._set_preview_label_image(self.phase3_focus_preview, None, "No hay Grad-CAM porque la fase no aplica")
             self.phase3_summary.setPlainText(reason)
             return
@@ -2611,6 +2673,11 @@ class MainWindow(QMainWindow):
             self.phase3_chart.set_items([])
             self._set_table_rows(self.phase3_table, [])
             self._set_preview_label_image(self.phase3_preview, None, "Sin muestra seleccionada")
+            self._set_preview_label_image(
+                self.phase3_result_preview,
+                None,
+                "La imagen analizada aparecera aqui al procesar una muestra",
+            )
             self._set_preview_label_image(
                 self.phase3_focus_preview,
                 None,
@@ -2673,6 +2740,7 @@ class MainWindow(QMainWindow):
                     f"Muestras no malignas: {non_malignant}",
                     f"Muestra principal: {phase3.get('image_name', 'N/A')}",
                     f"Clase principal: {class_name}",
+                    "Vistas mostradas: original, imagen analizada y Grad-CAM",
                     "",
                     "Lectura orientativa:",
                     (
@@ -2691,23 +2759,28 @@ class MainWindow(QMainWindow):
         idx = min(max(self.phase3_selected_index, 0), len(images) - 1)
         selected = images[idx]
         self.phase3_preview_title.setText(f"Muestra destacada · {selected.get('image_name', '')}")
-        frame = selected.get("preview")
-        if frame is None:
+        analyzed = selected.get("preview")
+        if analyzed is None:
             path = _resolve_history_path(selected.get("image_path"))
             if path is not None:
-                frame = cv2.imread(str(path))
-        if frame is None and self.current_consultation_record is not None:
+                analyzed = cv2.imread(str(path))
+        if analyzed is None and self.current_consultation_record is not None:
             key = f"histologia_{idx + 1:02d}_resultado"
             path = _resolve_history_path((self.current_consultation_record.get("images") or {}).get(key))
             if path is not None:
-                frame = cv2.imread(str(path))
+                analyzed = cv2.imread(str(path))
         visuals = self._resolve_phase3_visuals_for(self.phase3_result, self.current_consultation_record, idx)
-        original = visuals[0] if visuals else frame
+        original = visuals[0] if visuals else analyzed
         overlay = visuals[1] if visuals else None
         self._set_preview_label_image(
             self.phase3_preview,
-            original if original is not None else frame,
-            "No hay previsualizacion disponible",
+            original if original is not None else analyzed,
+            "No hay imagen original disponible",
+        )
+        self._set_preview_label_image(
+            self.phase3_result_preview,
+            analyzed,
+            "No hay imagen analizada disponible",
         )
         self._set_preview_label_image(self.phase3_focus_preview, overlay, "No hay Grad-CAM disponible")
 
@@ -2857,6 +2930,15 @@ class MainWindow(QMainWindow):
                 original = explanation.get("original")
             if explanation.get("overlay") is not None:
                 overlay = explanation.get("overlay")
+            if overlay is None and original is not None and self.models.microscopy_model is not None:
+                fallback = core.create_gradcam_explanation(
+                    self.models.microscopy_model,
+                    original,
+                    str(item.get("class_name") or ""),
+                )
+                if fallback is not None:
+                    original = fallback.get("original", original)
+                    overlay = fallback.get("overlay")
             if original is not None or overlay is not None:
                 return original, overlay
 
@@ -2869,6 +2951,21 @@ class MainWindow(QMainWindow):
             if original_path or overlay_path:
                 original = cv2.imread(str(original_path)) if original_path else None
                 overlay = cv2.imread(str(overlay_path)) if overlay_path else None
+                if overlay is None and original is not None and self.models.microscopy_model is not None:
+                    image_items = phase3_result.get("images") or []
+                    if image_items:
+                        safe_idx = min(max(index, 0), len(image_items) - 1)
+                        class_name = str((image_items[safe_idx] or {}).get("class_name", ""))
+                    else:
+                        class_name = str(phase3_result.get("class_name", ""))
+                    fallback = core.create_gradcam_explanation(
+                        self.models.microscopy_model,
+                        original,
+                        class_name,
+                    )
+                    if fallback is not None:
+                        original = fallback.get("original", original)
+                        overlay = fallback.get("overlay")
                 return original, overlay
         return None
 
@@ -2948,12 +3045,12 @@ class MainWindow(QMainWindow):
                 RED if phase1.get("is_positive") else GREEN if phase1.get("executed") else YELLOW,
             )
             self.home_card_phase2.set_data(
-                str(_safe_int(phase2.get("unique_polyps", 0))) if phase2.get("executed") else "Pendiente",
-                "Polipos confirmados" if phase2.get("executed") else "Fase 2 pendiente",
-                RED if _safe_int(phase2.get("unique_polyps", 0)) > 0 else GREEN if phase2.get("executed") else YELLOW,
+                _phase2_findings_value(phase2),
+                _phase2_findings_status(phase2),
+                RED if _phase2_has_confirmed_polyps(phase2) else GREEN if phase2.get("executed") else YELLOW,
             )
             if _phase3_is_not_applicable(phase3):
-                self.home_card_phase3.set_data("No aplica", "Sin polipos confirmados en Fase 2", BLUE)
+                self.home_card_phase3.set_data("No aplica", "Sin hallazgos persistentes en Fase 2", BLUE)
             else:
                 self.home_card_phase3.set_data(
                     f"{_safe_int(phase3.get('malignant_count', 0))}/{_safe_int(phase3.get('total_images', 0))}" if phase3.get("executed") else "Pendiente",
@@ -2963,7 +3060,7 @@ class MainWindow(QMainWindow):
             self.home_card_flow.set_data(*self._next_step_summary())
 
         self._set_phase_row(self.flow_phase1, phase1.get("executed"), phase1.get("status", "Pendiente"), RED if phase1.get("is_positive") else GREEN)
-        self._set_phase_row(self.flow_phase2, phase2.get("executed"), f"{_safe_int(phase2.get('unique_polyps', 0))} polipos", RED if _safe_int(phase2.get("unique_polyps", 0)) > 0 else GREEN)
+        self._set_phase_row(self.flow_phase2, phase2.get("executed"), _phase2_findings_status(phase2), RED if _phase2_has_confirmed_polyps(phase2) else GREEN)
         if _phase3_is_not_applicable(phase3):
             self._set_phase_row(self.flow_phase3, True, "No aplicable", BLUE, "Omitida")
         else:
@@ -2971,7 +3068,7 @@ class MainWindow(QMainWindow):
 
         chart_items = [
             {"label": "Riesgo clinico", "value": _safe_float(phase1.get("probability", 0.0)), "text": _percent(phase1.get("probability", 0.0)), "color": YELLOW},
-            {"label": "Hallazgos endoscopicos", "value": _safe_int(phase2.get("unique_polyps", 0)), "text": str(_safe_int(phase2.get("unique_polyps", 0))), "color": GREEN},
+            {"label": "Hallazgos endoscopicos", "value": 1 if _phase2_has_confirmed_polyps(phase2) else 0, "text": "Si" if _phase2_has_confirmed_polyps(phase2) else "No", "color": RED if _phase2_has_confirmed_polyps(phase2) else GREEN},
             {"label": "Histologia maligna", "value": _safe_int(phase3.get("malignant_count", 0)), "text": str(_safe_int(phase3.get("malignant_count", 0))), "color": MAUVE},
         ]
         self.home_chart.set_items(chart_items)
@@ -3003,7 +3100,7 @@ class MainWindow(QMainWindow):
                 return "Fase 2", "Continua con colonoscopia para verificar el riesgo detectado", GREEN
             return "Fase 2", "Puedes continuar con aviso clinico si aun necesitas verificar por colonoscopia", ORANGE
         if _phase3_is_not_applicable(self.phase3_result):
-            return "Informe", "La consulta termina en Fase 2 porque no se confirmaron polipos", BLUE
+            return "Informe", "La consulta termina en Fase 2 porque no se confirmaron hallazgos persistentes", BLUE
         if not self.phase3_result.get("executed"):
             return "Fase 3", "Completa la histologia para cerrar el caso", MAUVE
         return "Informe", "La consulta tiene datos para un informe completo", BLUE
@@ -3051,12 +3148,12 @@ class MainWindow(QMainWindow):
             RED if p1.get("is_positive") else GREEN if p1.get("executed") else YELLOW,
         )
         self.report_card_phase2.set_data(
-            str(_safe_int(p2.get("unique_polyps", 0))) if p2.get("executed") else "Pendiente",
-            "Polipos confirmados" if p2.get("executed") else "Fase 2 no ejecutada",
-            RED if _safe_int(p2.get("unique_polyps", 0)) > 0 else GREEN if p2.get("executed") else YELLOW,
+            _phase2_findings_value(p2),
+            _phase2_findings_status(p2, "Fase 2 no ejecutada"),
+            RED if _phase2_has_confirmed_polyps(p2) else GREEN if p2.get("executed") else YELLOW,
         )
         if _phase3_is_not_applicable(p3):
-            self.report_card_phase3.set_data("No aplica", "Sin polipos confirmados en Fase 2", BLUE)
+            self.report_card_phase3.set_data("No aplica", "Sin hallazgos persistentes en Fase 2", BLUE)
         else:
             self.report_card_phase3.set_data(
                 "MALIGNA" if p3.get("is_malignant") else "NO MALIGNA" if p3.get("executed") else "Pendiente",
@@ -3073,7 +3170,7 @@ class MainWindow(QMainWindow):
         )
         matrix_rows = [
             ["Fase 1", p1.get("status", "Pendiente"), f"Probabilidad {_percent(p1.get('probability', 0.0))}"],
-            ["Fase 2", f"{_safe_int(p2.get('unique_polyps', 0))} polipos", f"{_safe_int(p2.get('positive_frames', 0))} frames candidatos"],
+            ["Fase 2", _phase2_findings_status(p2), f"{_safe_int(p2.get('positive_frames', 0))} frames candidatos"],
             ["Conclusion", conclusion, "Lectura orientativa del sistema"],
         ]
         if _phase3_is_not_applicable(p3):
@@ -3098,7 +3195,7 @@ class MainWindow(QMainWindow):
             "",
             "Resumen de fases:",
             f"- Fase 1: {_status_text(p1)} | {p1.get('status', 'N/A')} | {_percent(p1.get('probability', 0.0))}",
-            f"- Fase 2: {_status_text(p2)} | {_safe_int(p2.get('unique_polyps', 0))} polipos confirmados | {_percent(p2.get('max_confidence', 0.0))} max.",
+            f"- Fase 2: {_status_text(p2)} | {_phase2_findings_status(p2)} | {_percent(p2.get('max_confidence', 0.0))} max.",
             "",
             "Variables clinicas con mayor peso:",
             *feature_lines,

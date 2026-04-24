@@ -51,6 +51,7 @@ from PIL import Image, ImageTk
 # Rutas a los modelos (cambiar cuando estén entrenados)
 MODEL_HISTORY: str = "models/catboost_crc_risk_model.cbm"     # Modelo de historial clínico
 MODEL_COLONOSCOPY: str = "models/colonoscopy.pt"    # YOLO para pólipos
+MODEL_COLONOSCOPY_SEGMENTER: str = "models/colonoscopy_unet3plus_effnet.pt"  # UNet3+ comparativo
 MODEL_MICROSCOPY: str = "models/microscopy.pt"      # Clasificación tejido
 MODEL_MICROSCOPY_META: str = "models/microscopy_meta.json"  # Metadata del modelo ganador
 
@@ -58,9 +59,11 @@ MODEL_MICROSCOPY_META: str = "models/microscopy_meta.json"  # Metadata del model
 CONFIDENCE_THRESHOLD: float = 0.25
 HISTORY_RISK_THRESHOLD: float = 0.5    # Umbral para considerar riesgo positivo
 COLONOSCOPY_CONFIDENCE_THRESHOLD: float = 0.50  # Reduce falsos positivos de YOLO
-POLYP_CONFIRM_SECONDS: float = 1.0      # Tiempo mínimo persistente para contar pólipo
+COLONOSCOPY_SEGMENTER_THRESHOLD: float = 0.50
+COLONOSCOPY_SEGMENTER_MIN_AREA_RATIO: float = 0.00035
+POLYP_CONFIRM_SECONDS: float = 0.5      # Tiempo minimo persistente para contar polipo con UNet3+
 POLYP_TRACK_IOU_THRESHOLD: float = 0.25
-POLYP_TRACK_MAX_MISSING_SECONDS: float = 0.35
+POLYP_TRACK_MAX_MISSING_SECONDS: float = 4.0
 
 # Rendimiento
 FRAME_SKIP: int = 1
@@ -115,6 +118,38 @@ def load_yolo_model(model_path: str, label: str) -> Any:
     except ImportError:
         print("  ✗ ultralytics no instalado. Instala con: uv add ultralytics")
         return None
+    except Exception as e:
+        print(f"  ✗ Error cargando {label}: {e}")
+        return None
+
+
+def load_polyp_segmenter(model_path: str = MODEL_COLONOSCOPY_SEGMENTER, label: str = "Segmentador colonoscopia") -> dict[str, Any] | None:
+    """Carga el UNet3+ EfficientNet entrenado como comparador visual de Fase 2."""
+    model_file = Path(model_path)
+    if not model_file.exists():
+        print(f"  ⚠ Modelo {label} no encontrado: '{model_path}' → comparador desactivado")
+        return None
+    try:
+        import torch
+        from train_models.model_colonoscopia import train_pretrained_polyp_segmenter as segmenter
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        checkpoint = torch.load(str(model_file), map_location=device, weights_only=False)
+        model = segmenter.load_pretrained_model(device)
+        model.load_state_dict(checkpoint["state_dict"], strict=False)
+        model.eval()
+        if device.type == "cuda":
+            model.to(memory_format=torch.channels_last)
+        image_size = int(checkpoint.get("image_size", checkpoint.get("config", {}).get("image_size", 352)))
+        threshold = float(checkpoint.get("threshold", checkpoint.get("config", {}).get("threshold", COLONOSCOPY_SEGMENTER_THRESHOLD)))
+        print(f"  ✓ Modelo {label} cargado: {model_path} ({image_size}px)")
+        return {
+            "model": model,
+            "device": device,
+            "image_size": image_size,
+            "threshold": threshold,
+            "architecture": checkpoint.get("architecture", "hf_unet3plus_efficientnet"),
+        }
     except Exception as e:
         print(f"  ✗ Error cargando {label}: {e}")
         return None
@@ -522,6 +557,73 @@ def run_inference(
     return detections
 
 
+def run_segmenter_inference(
+    segmenter: dict[str, Any] | None,
+    frame: np.ndarray,
+    threshold: float | None = None,
+) -> list[dict]:
+    """Ejecuta el segmentador UNet3+ y devuelve regiones con mascara exacta."""
+    if segmenter is None:
+        return []
+    try:
+        import torch
+        from torchvision.transforms import functional as TF
+
+        model = segmenter["model"]
+        device = segmenter["device"]
+        image_size = int(segmenter.get("image_size", 352))
+        threshold = float(threshold if threshold is not None else segmenter.get("threshold", COLONOSCOPY_SEGMENTER_THRESHOLD))
+
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        resized = cv2.resize(rgb, (image_size, image_size), interpolation=cv2.INTER_LINEAR)
+        tensor = TF.to_tensor(resized).unsqueeze(0).to(device)
+        if device.type == "cuda":
+            tensor = tensor.contiguous(memory_format=torch.channels_last)
+
+        with torch.no_grad(), torch.amp.autocast(device_type=device.type, enabled=device.type == "cuda"):
+            output = model(pixel_values=tensor)
+            logits = output["logits"] if isinstance(output, dict) else output
+            prob = torch.sigmoid(logits)[0, 0].detach().float().cpu().numpy()
+
+        h, w = frame.shape[:2]
+        prob = cv2.resize(prob, (w, h), interpolation=cv2.INTER_LINEAR)
+        mask = (prob >= threshold).astype(np.uint8)
+        min_area = max(12, int(h * w * COLONOSCOPY_SEGMENTER_MIN_AREA_RATIO))
+        kernel = np.ones((3, 3), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        detections: list[dict] = []
+        for contour in contours:
+            area = float(cv2.contourArea(contour))
+            if area < min_area:
+                continue
+            x, y, bw, bh = cv2.boundingRect(contour)
+            region_mask = np.zeros((h, w), dtype=np.uint8)
+            cv2.drawContours(region_mask, [contour], -1, 1, thickness=-1)
+            region_probs = prob[region_mask > 0]
+            confidence = float(region_probs.mean()) if region_probs.size else float(prob.max())
+            detections.append(
+                {
+                    "x1": int(x),
+                    "y1": int(y),
+                    "x2": int(x + bw),
+                    "y2": int(y + bh),
+                    "confidence": confidence,
+                    "class_name": "unet-polyp",
+                    "mask": region_mask.astype(bool),
+                    "contour": contour,
+                    "model_name": "UNet3+",
+                }
+            )
+        detections.sort(key=lambda det: float(det["confidence"]), reverse=True)
+        return detections
+    except Exception as e:
+        print(f"  ⚠ Error en segmentador UNet3+: {e}")
+        return []
+
+
 def draw_detections(
     frame: np.ndarray, detections: list[dict], phase: str = "polyp"
 ) -> np.ndarray:
@@ -534,7 +636,16 @@ def draw_detections(
         track_id = det.get("track_id")
         label = f"{cls_name} #{track_id} {conf:.2f}" if track_id is not None else f"{cls_name} {conf:.2f}"
 
-        cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
+        mask = det.get("mask")
+        contour = det.get("contour")
+        if mask is not None:
+            overlay = frame.copy()
+            overlay[np.asarray(mask, dtype=bool)] = box_color
+            cv2.addWeighted(overlay, 0.32, frame, 0.68, 0, dst=frame)
+        if contour is not None:
+            cv2.drawContours(frame, [contour], -1, box_color, 2)
+        else:
+            cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
         (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
         cv2.rectangle(frame, (x1, y1 - th - 10), (x1 + tw + 8, y1), bg_color, -1)
         cv2.putText(
@@ -858,6 +969,22 @@ def _bbox_iou(box_a: dict[str, Any], box_b: dict[str, Any]) -> float:
     return intersection / union
 
 
+def _bbox_center_distance(box_a: dict[str, Any], box_b: dict[str, Any]) -> float:
+    ax = (float(box_a["x1"]) + float(box_a["x2"])) / 2.0
+    ay = (float(box_a["y1"]) + float(box_a["y2"])) / 2.0
+    bx = (float(box_b["x1"]) + float(box_b["x2"])) / 2.0
+    by = (float(box_b["y1"]) + float(box_b["y2"])) / 2.0
+    return float(np.hypot(ax - bx, ay - by))
+
+
+def _bbox_match_radius(box_a: dict[str, Any], box_b: dict[str, Any]) -> float:
+    aw = max(float(box_a["x2"]) - float(box_a["x1"]), 1.0)
+    ah = max(float(box_a["y2"]) - float(box_a["y1"]), 1.0)
+    bw = max(float(box_b["x2"]) - float(box_b["x1"]), 1.0)
+    bh = max(float(box_b["y2"]) - float(box_b["y1"]), 1.0)
+    return max(140.0, 2.8 * max(aw, ah, bw, bh))
+
+
 def _update_polyp_tracks(
     detections: list[dict],
     active_tracks: list[dict[str, Any]],
@@ -866,7 +993,12 @@ def _update_polyp_tracks(
     max_missing_frames: int = 10,
     min_confirm_frames: int = 30,
 ) -> tuple[list[dict[str, Any]], int, int]:
-    """Asocia detecciones a tracks y devuelve cuántos pólipos únicos nuevos confirmar."""
+    """Asocia detecciones a tracks y devuelve cuántos pólipos únicos nuevos confirmar.
+
+    La asociacion usa IoU primero y cercania del centro como fallback. Esto evita
+    contar como nuevo polipo una region que desaparece unos segundos por movimiento
+    de camara y vuelve cerca de la misma zona.
+    """
     for track in active_tracks:
         track["matched"] = False
 
@@ -874,16 +1006,23 @@ def _update_polyp_tracks(
 
     for det in detections:
         best_track = None
-        best_iou = 0.0
+        best_score = -1.0
         for track in active_tracks:
             if track["matched"]:
                 continue
             iou = _bbox_iou(det, track["bbox"])
-            if iou > best_iou:
-                best_iou = iou
+            distance = _bbox_center_distance(det, track["bbox"])
+            radius = _bbox_match_radius(det, track["bbox"])
+            center_match = distance <= radius
+            center_score = max(0.0, 1.0 - (distance / max(radius, 1.0)))
+            score = max(iou, center_score * 0.95)
+            if center_match and track["missing"] > 0:
+                score += 0.20
+            if score > best_score:
+                best_score = score
                 best_track = track
 
-        if best_track is not None and best_iou >= iou_threshold:
+        if best_track is not None and best_score >= 0.12:
             best_track["bbox"] = {
                 "x1": det["x1"],
                 "y1": det["y1"],
@@ -899,6 +1038,33 @@ def _update_polyp_tracks(
                 best_track["counted"] = True
                 unique_new_polyps += 1
         else:
+            fallback_track = None
+            fallback_distance = float("inf")
+            for track in active_tracks:
+                if track["matched"] or not track.get("counted", False):
+                    continue
+                if int(track.get("missing", 0)) > max_missing_frames:
+                    continue
+                distance = _bbox_center_distance(det, track["bbox"])
+                radius = _bbox_match_radius(det, track["bbox"]) * 2.2
+                if distance <= radius and distance < fallback_distance:
+                    fallback_track = track
+                    fallback_distance = distance
+
+            if fallback_track is not None:
+                fallback_track["bbox"] = {
+                    "x1": det["x1"],
+                    "y1": det["y1"],
+                    "x2": det["x2"],
+                    "y2": det["y2"],
+                }
+                fallback_track["confidence"] = det["confidence"]
+                fallback_track["missing"] = 0
+                fallback_track["hits"] += 1
+                fallback_track["matched"] = True
+                det["track_id"] = fallback_track["track_id"]
+                continue
+
             new_track = {
                 "track_id": next_track_id,
                 "bbox": {
@@ -1272,6 +1438,7 @@ def save_patient_consultation_history(
     )
     if p2_original:
         saved_images["colonoscopia_original"] = p2_original
+        saved_images["colonoscopia_resultado"] = p2_original
     if p2_focus:
         saved_images["colonoscopia_enfoque"] = p2_focus
 
@@ -1369,7 +1536,7 @@ def process_video_phase(
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     effective_fps = max(src_fps / max(FRAME_SKIP, 1), 1.0)
-    min_confirm_frames = max(8, int(round(POLYP_CONFIRM_SECONDS * effective_fps)))
+    min_confirm_frames = max(4, min(6, int(round(POLYP_CONFIRM_SECONDS * effective_fps))))
     max_missing_frames = max(
         3,
         int(round(POLYP_TRACK_MAX_MISSING_SECONDS * effective_fps)),

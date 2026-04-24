@@ -80,6 +80,19 @@ Lo más útil del dashboard ahora mismo:
 - Ver métricas del entrenamiento de colonoscopia ya guardado.
 - Lanzar entrenamiento YOLO de colonoscopia usando el dataset ya preparado.
 - Probar inferencia sobre modelos YOLO de colonoscopia.
+- Entrenar un modelo alternativo de segmentación con ResNet50 para comparar contra YOLO:
+
+```powershell
+.\.venv\Scripts\python.exe .\train_models\model_colonoscopia\train_maskrcnn_resnet50_compare.py
+```
+
+Ese script:
+
+- usa las máscaras exactas de `data/dataset_yolo/masks/`
+- entrena `Mask R-CNN + ResNet50-FPN`
+- guarda curvas y gráficas de entrenamiento
+- compara el modelo nuevo contra `models/colonoscopy.pt`
+- exporta el nuevo modelo a `models/colonoscopy_maskrcnn_resnet50.pth`
 
 Importante:
 
@@ -120,9 +133,48 @@ python .\prepare_colon_dataset.py
 - `main.py`: archivo de ejemplo, no es la entrada real del proyecto
 - `models/catboost_crc_risk_model.cbm`: modelo CatBoost de historial médico
 - `models/colonoscopy.pt`: modelo de colonoscopia
+- `models/colonoscopy_unet3plus_effnet.pt`: segmentador UNet3+ usado como modelo principal en Fase 2
 - `models/microscopy.pt`: modelo de microscopía
 - `models/microscopy_meta.json`: metadata necesaria para cargar el modelo de microscopía
 - `train_models/model_colonoscopia/entrenamiento/`: métricas y pesos ya generados
+
+## Nuevo entrenamiento de segmentacion de polipos
+
+Para probar un segmentador medico preentrenado antes de tocar el YOLO de produccion:
+
+```powershell
+.\.venv\Scripts\python.exe .\train_models\model_colonoscopia\train_pretrained_polyp_segmenter.py
+```
+
+El script nuevo:
+
+- parte de `andreribeiro87/unet3plus-efficientnet-kvasir-seg`
+- descarga Kvasir-SEG oficial si no existe
+- deduplica contra el test local para evitar fugas de datos
+- mantiene `models/colonoscopy.pt` como baseline
+- exporta el candidato a `models/colonoscopy_unet3plus_effnet.pt`
+- guarda curvas, galeria visual y comparativa en `train_models/model_colonoscopia/pretrained_polyp_segmenter/`
+
+Comandos utiles:
+
+```powershell
+# Solo preparar datos y comprobar duplicados, sin entrenar
+.\.venv\Scripts\python.exe .\train_models\model_colonoscopia\train_pretrained_polyp_segmenter.py --prepare-only
+
+# Entrenamiento rapido de prueba
+.\.venv\Scripts\python.exe .\train_models\model_colonoscopia\train_pretrained_polyp_segmenter.py --epochs 8 --image-size 352
+
+# Anadir normales desde HyperKvasir en modo streaming limitado
+.\.venv\Scripts\python.exe .\train_models\model_colonoscopia\train_pretrained_polyp_segmenter.py --download-hyperkvasir-normals
+```
+
+Si tienes CVC-ClinicDB descargado de Kaggle, ponlo en:
+
+```text
+data/external_polyp_sources/cvc_clinicdb/
+```
+
+El script lo importara automaticamente si encuentra carpetas de imagenes y mascaras.
 
 ## Limitación actual
 

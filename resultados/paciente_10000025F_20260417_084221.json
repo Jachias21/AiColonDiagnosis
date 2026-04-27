@@ -1,0 +1,25 @@
+{
+    "informacion_paciente": {
+        "Nombre": "paciente_25",
+        "DNI": "10000025F",
+        "Age": 48,
+        "Gender": "M",
+        "Country": "Germany",
+        "Urban_or_Rural": "Urban",
+        "Family_History": "No",
+        "Inflammatory_Bowel_Disease": "No",
+        "Obesity_BMI": "Obese",
+        "Diabetes": "No",
+        "Smoking_History": "Yes",
+        "Alcohol_Consumption": "Yes",
+        "Diet_Risk": "High",
+        "Physical_Activity": "Low",
+        "Screening_History": "Never"
+    },
+    "analisis_ia": {
+        "fecha_analisis": "2026-04-17T08:42:21.304958",
+        "riesgo_detectado": false,
+        "probabilidad_exacta": 0.126263827085495,
+        "modelo_utilizado": "XGBoost"
+    }
+}

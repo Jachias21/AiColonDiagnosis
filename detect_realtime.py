@@ -360,7 +360,7 @@ def save_phase1_result(patient_data: dict, is_positive: bool, probability: float
             "fecha_analisis": datetime.now().isoformat(),
             "riesgo_detectado": bool(is_positive),
             "probabilidad_exacta": float(probability),
-            "modelo_usado": "CatBoost_Phase1"
+            "modelo_utilizado": "CatBoost"
         }
     }
     

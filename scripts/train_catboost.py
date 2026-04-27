@@ -45,17 +45,16 @@ monotone_constraints_dict = {
     'Smoking_History': 1,
     'Diabetes': 1,
     'Physical_Activity': -1,
-    'Screening_History': -1  # A mayor frecuencia de screening, menor riesgo no detectado
+    'Screening_History': -1 
 }
 cat_constraints = {col: dir for col, dir in monotone_constraints_dict.items()}
 cat_features_idx = [X.columns.get_loc(col) for col in cat_features_nombres]
 
 # 3. PESOS CLÍNICOS DEFINITIVOS
-# Equilibrio perfecto entre Edad (Rey biológico) y multiplicadores clínicos
 pesos_clinicos = {
-    'Age': 5.0,                           # 👑 REY: Máximo peso base.
-    'Inflammatory_Bowel_Disease': 4.5,    # Multiplicador crítico
-    'Family_History': 4.5,                # Multiplicador crítico
+    'Age': 5.0,                           
+    'Inflammatory_Bowel_Disease': 4.5,    
+    'Family_History': 4.5,                
     'Obesity_BMI': 3.0,                   
     'Smoking_History': 2.5,               
     'Alcohol_Consumption': 2.5,           
@@ -77,12 +76,12 @@ skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 oof_preds = np.zeros(len(X))
 models = []
 
-# Parámetros Anti-Overfitting (Sin Atajos)
+# Parámetros
 params = {
-    'iterations': 400,            # Ciclos óptimos controlados
-    'learning_rate': 0.04,        # Aprendizaje progresivo
-    'depth': 5,                   # Evita subdivisiones hipertópicas en la edad
-    'l2_leaf_reg': 5.0,           # Regularización FUERTE: obliga a analizar todo el historial
+    'iterations': 400,            
+    'learning_rate': 0.04,       
+    'depth': 5,                   
+    'l2_leaf_reg': 5.0,           
     'monotone_constraints': cat_constraints,
     'feature_weights': feature_weights_dict,
     'eval_metric': 'AUC',
@@ -116,12 +115,11 @@ print(f"AUC-ROC Global:     {auc_global:.4f} (Excelente discriminación)")
 print(f"Recall Global:      {recall_global:.4f} (Alta sensibilidad)")
 print(f"Brier Score Global: {brier_global:.4f} (Magnífica calibración)")
 
-# 6. EXPLICABILIDAD SHAP (Mejor modelo)
-best_model = models[-1] # Seleccionamos el último fold (completamente generalista)
+# 6. EXPLICABILIDAD SHAP
+best_model = models[-1]
 
 print("\nGenerando análisis de explicabilidad visual SHAP...")
 explainer = shap.TreeExplainer(best_model)
-# SHAP sobre una muestra amplia para no bloquear la memoria
 X_sample = X.sample(n=2000, random_state=42)
 shap_values = explainer(X_sample)
 

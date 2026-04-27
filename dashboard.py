@@ -4,9 +4,9 @@ dashboard.py
 Panel de control Streamlit para AiColonDiagnosis.
 
 Funcionalidades:
-  🔬 Probar modelo    → Subir imagen, detectar pólipos, ver bounding boxes
-  📊 Métricas         → Ver gráficas de entrenamiento, curvas, matriz de confusión
-  🏋️ Entrenar modelo  → Configurar hiperparámetros y lanzar entrenamiento
+  Probar modelo    → Subir imagen, detectar pólipos, ver bounding boxes
+  Métricas         → Ver gráficas de entrenamiento, curvas, matriz de confusión
+  Entrenar modelo  → Configurar hiperparámetros y lanzar entrenamiento
 
 Ejecutar:
     uv run streamlit run dashboard.py
@@ -222,7 +222,7 @@ def parse_results_csv(csv_path: Path) -> dict[str, list[float]] | None:
 # SIDEBAR — Navegación
 # ══════════════════════════════════════════════
 
-st.sidebar.title("🏥 AiColonDiagnosis")
+st.sidebar.title("AiColonDiagnosis")
 st.sidebar.markdown("---")
 
 page = st.sidebar.radio(

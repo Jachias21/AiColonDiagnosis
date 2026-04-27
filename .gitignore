@@ -42,3 +42,6 @@ runs/
 train_models/model_colonoscopia/*_compare/
 train_models/model_colonoscopia/pretrained_polyp_segmenter/
 train_models/model_colonoscopia/yoloseg_compare/
+
+
+resultados/

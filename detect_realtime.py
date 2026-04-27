@@ -28,10 +28,30 @@ import json
 import shutil
 import sys
 import time
-import tkinter as tk
+try:
+    import tkinter as tk
+    from tkinter import filedialog, messagebox
+    HAS_TK = True
+except (ImportError, RuntimeError):
+    HAS_TK = False
+    # Definir objetos dummy para evitar errores de atributo o tipos
+    class DummyType:
+        def __init__(self, *args, **kwargs): pass
+        def __getattr__(self, name): return lambda *a, **k: None
+
+    tk = DummyType()
+    tk.Tk = DummyType
+    tk.Toplevel = DummyType
+    tk.Button = DummyType
+    tk.Frame = DummyType
+    tk.Label = DummyType
+    tk.Entry = DummyType
+    tk.StringVar = DummyType
+    filedialog = DummyType()
+    messagebox = DummyType()
+
 from datetime import datetime
 from pathlib import Path
-from tkinter import filedialog, messagebox
 from typing import Any, Optional
 import pandas as pd
 
@@ -42,7 +62,13 @@ if sys.platform == "win32":
 
 import cv2
 import numpy as np
-from PIL import Image, ImageTk
+from PIL import Image
+try:
+    from PIL import ImageTk
+    HAS_IMAGETK = True
+except (ImportError, RuntimeError):
+    HAS_IMAGETK = False
+    ImageTk = None
 
 # ══════════════════════════════════════════════
 # CONFIGURACIÓN
@@ -501,7 +527,7 @@ def save_phase1_result(patient_data: dict, is_positive: bool, probability: float
             "fecha_analisis": datetime.now().isoformat(),
             "riesgo_detectado": bool(is_positive),
             "probabilidad_exacta": float(probability),
-            "modelo_usado": "CatBoost_Phase1"
+            "modelo_utilizado": "CatBoost"
         }
     }
     
@@ -709,12 +735,19 @@ def _get_screen_size() -> tuple[int, int]:
         except Exception:
             pass
 
-    probe = tk.Tk()
-    probe.withdraw()
-    probe.update_idletasks()
-    size = (probe.winfo_screenwidth(), probe.winfo_screenheight())
-    probe.destroy()
-    return size
+    if not HAS_TK:
+        # Fallback para sistemas sin tkinter (como macOS con homebrew incompleto)
+        return (1920, 1080)
+
+    try:
+        probe = tk.Tk()
+        probe.withdraw()
+        probe.update_idletasks()
+        size = (probe.winfo_screenwidth(), probe.winfo_screenheight())
+        probe.destroy()
+        return size
+    except Exception:
+        return (1280, 720)
 
 
 def _center_cv_window(

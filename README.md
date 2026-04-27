@@ -1,4 +1,4 @@
-# AiColonDiagnosis 🔬
+# AiColonDiagnosis 
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
 [![PySide6](https://img.shields.io/badge/GUI-PySide6-green.svg)](https://wiki.qt.io/Qt_for_Python)
@@ -6,7 +6,7 @@
 
 Proyecto final integrativo de Inteligencia Artificial para el diagnóstico asistido de cáncer de colon. Está estructurado como una herramienta de apoyo clínico integral, abarcando desde la evaluación preventiva del historial médico hasta el análisis por imagenología avanzada.
 
-## 🌟 Características Principales
+## Características Principales
 
 El sistema acompaña el flujo de diagnóstico a través de **3 Fases** o modelos:
 
@@ -19,11 +19,11 @@ El sistema acompaña el flujo de diagnóstico a través de **3 Fases** o modelos
 3. **Fase 3: Análisis de Imagen Histológica**
    - Clasificación final sobre biopsias / imágenes de microscopio confirmando el tipo de tejido tumoral o benigno.
 
-> 📖 **Para usuarios no técnicos:** Hemos incluido un [Manual de Usuario (Manual_de_Usuario.md)](Manual_de_Usuario.md) que te guiará paso a paso en cómo abrir y usar la aplicación sin conocimientos previos.
+> **Para usuarios no técnicos:** Hemos incluido un [Manual de Usuario (Manual_de_Usuario.md)](Manual_de_Usuario.md) que te guiará paso a paso en cómo abrir y usar la aplicación sin conocimientos previos.
 
 ---
 
-## 🛠️ Instalación y Configuración Inicial
+##  Instalación y Configuración Inicial
 
 El proyecto se gestiona idealmente con el gestor de dependencias **`uv`**.
 
@@ -37,7 +37,7 @@ De forma alternativa, el proyecto cuenta con la carpeta local `.venv` la cual pu
 
 ---
 
-## 🚀 Ejecución de la Plataforma
+##  Ejecución de la Plataforma
 
 ### Aplicación Médica Principal (Interfaz PySide6)
 
@@ -63,7 +63,7 @@ uv run streamlit run dashboard.py
 
 ---
 
-## 📁 Archivos y Modelos Clave
+##  Archivos y Modelos Clave
 
 El repositorio se compone actualmente de los productos finales ejecutables:
 
@@ -77,7 +77,7 @@ El repositorio se compone actualmente de los productos finales ejecutables:
 
 ---
 
-## 🧪 Sección para Desarrolladores
+##  Sección para Desarrolladores
 
 ### 1. Regeneración de Datasets Experimentales
 Si deseas recrear desde cero los datos de segmentación:

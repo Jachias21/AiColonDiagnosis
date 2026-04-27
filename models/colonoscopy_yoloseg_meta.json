@@ -1,0 +1,11 @@
+{
+  "architecture": "ultralytics-yolo-seg",
+  "base_model": "yolov8m-seg.pt",
+  "task": "segment",
+  "classes": [
+    "polyp"
+  ],
+  "source_weights": "C:\\Programas\\Proyecto2\\AiColonDiagnosis\\train_models\\model_colonoscopia\\yoloseg_compare\\weights\\best.pt",
+  "score_threshold_default": 0.35,
+  "iou_threshold_default": 0.6
+}

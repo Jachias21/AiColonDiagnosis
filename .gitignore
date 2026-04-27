@@ -29,5 +29,16 @@ Thumbs.db
 
 # Modelos y artefactos pesados
 *.pt
+*.pth
 train_models/model_microscopio/resultados/**/best.pt
 train_models/model_colonoscopia/entrenamiento/weights/
+
+# Historiales y consultas (datos sensibles / imágenes generadas)
+patients_history/
+pending_consultations/
+
+# Artefactos de entrenamiento y validación
+runs/
+train_models/model_colonoscopia/*_compare/
+train_models/model_colonoscopia/pretrained_polyp_segmenter/
+train_models/model_colonoscopia/yoloseg_compare/

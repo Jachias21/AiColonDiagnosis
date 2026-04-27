@@ -1,4 +1,4 @@
-# Manual de Despliegue y Arquitectura (Técnico) - AiColonDiagnosis ⚙️
+# Manual de Despliegue y Arquitectura (Técnico) - AiColonDiagnosis 
 
 Este documento está dirigido a desarrolladores, ingenieros de datos y administradores del sistema ("el mecánico del coche"). Aquí documentamos cómo instalar la aplicación, los engranajes internos, entrenamientos y configuración avanzada.
 

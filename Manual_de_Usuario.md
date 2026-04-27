@@ -35,9 +35,9 @@ En esta fase, el sistema revisará un vídeo médico o la cámara. Mientras el v
 *   **Nota de confianza:** El sistema solo alertará fijamente cuando esté muy seguro. Si el cuadro parpadea una fracción de segundo, es que el sistema ha descartado la zona.
 
 **Teclas Especiales en esta Fase:**
-- `p` 👉 **Pausar o reanudar** el vídeo. Ideal para examinar mejor una zona concreta.
-- `s` 👉 Tomar una **captura de pantalla** o *Screenshot*. Útil para anexarlo al informe del paciente (se guardan automáticamente en tu ordenador).
-- `q` 👉 **Cerrar** el vídeo y volver a la app.
+- `p` --> **Pausar o reanudar** el vídeo. Ideal para examinar mejor una zona concreta.
+- `s` --> Tomar una **captura de pantalla** o *Screenshot*. Útil para anexarlo al informe del paciente (se guardan automáticamente en tu ordenador).
+- `q` --> **Cerrar** el vídeo y volver a la app.
 
 ### Fase 3: Análisis Microscópico
 1. Haz clic en "Añadir Archivos" o cargar imágenes. 

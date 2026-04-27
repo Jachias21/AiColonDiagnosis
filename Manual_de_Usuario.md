@@ -1,125 +1,51 @@
-# Manual de Usuario Integral - AiColonDiagnosis
+# Manual de Usuario Integral - AiColonDiagnosis 🩺
 
-¡Bienvenido a AiColonDiagnosis! Este es un manual detallado diseñado **para todo el mundo**. No importa si eres un desarrollador experto, un profesional de la salud o un usuario que nunca antes ha abierto una terminal. Aquí te explicaremos paso a paso qué es este sistema y cómo utilizarlo de forma sencilla.
+¡Bienvenido a AiColonDiagnosis! Este manual explica cómo **utilizar** la aplicación médica en tu día a día, como profesional de la salud o usuario final. No necesitas tener conocimientos técnicos.
 
 ---
 
 ## 1. ¿Qué es AiColonDiagnosis?
 
-**AiColonDiagnosis** es un software interactivo asistido por Inteligencia Artificial diseñado para ayudar en el diagnóstico temprano del cáncer de colon. El sistema te acompaña mediante 3 filtros o "fases":
+**AiColonDiagnosis** es un asistente interactivo diseñado para ayudar en la detección del cáncer de colon. La aplicación te guía a lo largo de un flujo de 3 etapas complementarias:
 
-1. **Fase 1: Historial Médico.** Se analizan los datos clínicos y características previas del paciente (edad, antecedentes, etc.) utilizando modelos predictivos para evaluar el riesgo inicial.
-2. **Fase 2: Colonoscopia.** Se utiliza la cámara en vivo o un vídeo grabado para detectar pólipos en tiempo real durante una inspección visual.
-3. **Fase 3: Imagen Histológica.** Se examinan imágenes de microscopio (biopsias) enviadas desde un laboratorio para confirmar si el tejido analizado es maligno o benigno.
-
----
-
-## 2. Requisitos iniciales (Abriendo la puerta al sistema)
-
-Para usar este programa necesitas utilizar lo que se conoce como **Terminal** o **Símbolo del sistema**. Es una aplicación que permite comunicarnos con el ordenador a través de texto.
-
-### ¿Cómo abrir la Terminal?
-*   **En Windows:** Pulsa la tecla `Windows` en tu teclado, escribe `cmd` o `Terminal` y pulsa *Enter*.
-*   **En Mac:** Pulsa `Command` (Cmd ⌘) + `Espacio`, escribe `Terminal` y pulsa *Enter*.
-*   **En Linux:** Pulsa `Ctrl + Alt + T` al mismo tiempo.
-
-Se abrirá una ventana de fondo negro o blanco donde puedes escribir comandos.
-
-### ¿Cómo llegar al programa?
-Una vez tengas la Terminal abierta, debes decirle a tu ordenador dónde están guardados los archivos de la aplicación. Para ello, utiliza el comando `cd` (cambiar directorio) seguido de un espacio y de la ruta donde descargaste este proyecto. Por ejemplo:
-
-**Si usas Windows:**
-```bash
-cd "C:\Ruta\Hacia\La\Carpeta\AiColonDiagnosis"
-```
-
-**Si usas Mac o Linux:**
-```bash
-cd "/Ruta/Hacia/La/Carpeta/AiColonDiagnosis"
-```
+1. **Fases 1 (Historial Médico):** Analiza el riesgo inicial a partir de constantes vitales y características previas del paciente.
+2. **Fase 2 (Colonoscopia):** Permite detectar pólipos en tiempo real durante una inspección en vídeo.
+3. **Fase 3 (Microscopía):** Verifica si el tejido de la biopsia analizado en el laboratorio es benigno o maligno.
 
 ---
 
-## 3. ¿Cómo ejecutar y usar la Aplicación Principal?
+## 2. Abriendo la Aplicación
 
-### Arrancando el programa
-
-Asegúrate de haber hecho el paso anterior (estar en la carpeta del programa). Ahora, ejecuta (pulsando *Enter*) tu comando según tu sistema:
-
-**En Windows:**
-```bash
-.\.venv\Scripts\python.exe main.py
-```
-
-**En Mac o Linux:**
-```bash
-./.venv/bin/python main.py
-```
-
-*(Si prefieres arrancar el motor más moderno de forma directa, puedes teclear: `app_pyside6.py` en lugar de `main.py` al final del comando anterior).*
-
-Al hacerlo, se te abrirá una **ventana de menú principal**. 
-
-### Opciones de la Interfaz
-
-* **Flujo Completo:** Te permite analizar a un paciente pasando secuencialmente por la Fase 1, luego la Fase 2 y finalmente la Fase 3.
-* **Módulos Individuales:** Si sólo quieres hacer un análisis rápido de un historial (Fase 1) o analizar una foto de microscopio (Fase 3), puedes seleccionar cada opción por separado.
-
-### Controles Ocultos del Teclado (Muy útiles)
-Durante la revisión médica visual (sobre todo en imágenes o vídeos en la Fase 2), recuerda estas teclas:
-* `p` --> **Pausar o reanudar** el vídeo.
-* `s` --> Tomar una **captura de pantalla** o *Screenshot*. Éstas se guardarán automáticamente en la carpeta `screenshots/`.
-* `q` --> **Salir / Cerrar** la fase actual para volver atrás.
+Consulta con tu equipo técnico cómo te han facilitado el acceso. Generalmente, basta con abrir el acceso directo de **AiColonDiagnosis**. 
+Al abrirse, verás el **Menú Principal**, desde el que podrás elegir:
+- **Flujo Completo:** Para ver de manera seguida el estado del paciente.
+- **Acceso rápido a una fase específica:** Si solo necesitas comprobar unas constantes o mirar una imagen de microscopio suelta.
 
 ---
 
-## 4. Detalles de las Fases del Análisis
+## 3. Uso de la Aplicación (El flujo Médico)
 
-### Fase 1: Análisis de Historial Médico
-Escribirás los datos o abrirás un archivo de las constantes vitales y características del paciente. El programa usará un modelo de IA (CatBoost) o una versión "Demo" (si el modelo no está cargado) para calcular el riesgo general.
+### Fase 1: Riesgo por Historial Médico
+1. Ingresa los datos solicitados en los formularios sobre tu paciente (edad, índice de masa corporal, antecedentes, etc.).
+2. Pulsa en el botón para Evaluar.
+3. Observarás un indicador de riesgo y una gráfica ("Explicación SHAP") que resalta en verde o rojo qué factores han bajado o incrementado el nivel de alerta (por ejemplo: si es fumador, aumentará la alerta en rojo).
 
-### Fase 2: Análisis por Vídeo (Colonoscopia)
-El programa se conecta a la cámara web o abre un vídeo médico. En tiempo real, la IA detectará y señalará posibles pólipos en pantalla.
+### Fase 2: Análisis de Colonoscopia (Vídeo)
+En esta fase, el sistema revisará un vídeo médico o la cámara. Mientras el vídeo avanza, la Inteligencia Artificial dibujará "cajas" rojas cuando detecte un posible pólipo.
+*   **Nota de confianza:** El sistema solo alertará fijamente cuando esté muy seguro. Si el cuadro parpadea una fracción de segundo, es que el sistema ha descartado la zona.
+
+**Teclas Especiales en esta Fase:**
+- `p` 👉 **Pausar o reanudar** el vídeo. Ideal para examinar mejor una zona concreta.
+- `s` 👉 Tomar una **captura de pantalla** o *Screenshot*. Útil para anexarlo al informe del paciente (se guardan automáticamente en tu ordenador).
+- `q` 👉 **Cerrar** el vídeo y volver a la app.
 
 ### Fase 3: Análisis Microscópico
-Podrás cargar una o varias imágenes de biopsia al mismo tiempo. El programa indicará los resultados bajo el microscopio.
+1. Haz clic en "Añadir Archivos" o cargar imágenes. 
+2. Puedes subir múltiples fotografías a la vez procedentes del laboratorio.
+3. El sistema aplicará un filtro de color automático (segmentación visual) y te dirá con exactitud de qué naturaleza es el tejido.
 
 ---
 
-## 5. El "Dashboard" o Panel Estadístico
+**Con esto, estás preparado para utilizar el sistema y tomar mejores decisiones clínicas.** 
 
-Aparte de la aplicación médica, existe otra aplicación web muy completa enfocada en gráficas, métricas e información técnica.
-
-Para abrirlo, vuelve a tu **Terminal**, asegúrate de estar en la carpeta del proyecto y ejecuta el siguiente comando aplicable a tu ecosistema:
-
-**En Windows:**
-```bash
-.\.venv\Scripts\python.exe -m streamlit run dashboard.py
-```
-
-**En Mac o Linux:**
-```bash
-./.venv/bin/python -m streamlit run dashboard.py
-```
-
----
-
-## 6. Apartado exclusivo para Desarrolladores
-
-Si eres analista de datos, programador o ingeniero, aquí tienes datos extra sobre cómo está armado esto por dentro:
-
-* **Gestión de Paquetes:** El proyecto utiliza `uv` o entornos virtuales.
-* **Archivos Clave:**
-   * `app_pyside6.py`: Capa de la interfaz moderna (PySide6).
-   * `detect_realtime.py`: Algoritmos base para el procesamiento en tiempo real.
-   * `dashboard.py`: Panel web con `Streamlit`.
-* **Modelos Finales (`models/`):**
-   * `colonoscopy.pt` / `colonoscopy_unet3plus_effnet.pt`: Segmentación de vídeo.
-   * `microscopy.pt`: Clasificación celular.
-* **Entrenamientos Secundarios:**
-   * Si deseas correr rutinas de entrenamiento exploratorio (Mask R-CNN, ResNet50, arquitecturas YOLO) usa los scripts bajo la carpeta `train_models/model_colonoscopia/`. 
-     Ejemplo en Windows: `.\.venv\Scripts\python.exe train_models\model_colonoscopia\train_maskrcnn_resnet50_compare.py`.
-
----
-
-**¡Disfruta usando AiColonDiagnosis!**
+*(Si tienes problemas con la instalación, la pantalla se queda negra o deseas personalizar el sistema internamente, consulta el `Manual_de_Despliegue.md` diseñado para equipos técnicos).*

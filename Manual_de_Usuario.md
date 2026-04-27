@@ -67,9 +67,9 @@ Al hacerlo, se te abrirá una **ventana de menú principal**.
 
 ### Controles Ocultos del Teclado (Muy útiles)
 Durante la revisión médica visual (sobre todo en imágenes o vídeos en la Fase 2), recuerda estas teclas:
-* `p` 👉 **Pausar o reanudar** el vídeo.
-* `s` 👉 Tomar una **captura de pantalla** o *Screenshot*. Éstas se guardarán automáticamente en la carpeta `screenshots/`.
-* `q` 👉 **Salir / Cerrar** la fase actual para volver atrás.
+* `p` --> **Pausar o reanudar** el vídeo.
+* `s` --> Tomar una **captura de pantalla** o *Screenshot*. Éstas se guardarán automáticamente en la carpeta `screenshots/`.
+* `q` --> **Salir / Cerrar** la fase actual para volver atrás.
 
 ---
 

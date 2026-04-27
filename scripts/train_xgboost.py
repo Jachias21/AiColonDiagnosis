@@ -13,6 +13,13 @@ import shap
 
 print("Iniciando Entrenamiento de Modelo Clínico: XGBoost (Cross-Validated)...")
 
+# Crear carpeta de logs estilo CatBoost
+xgb_info_dir = "xgboost_info"
+os.makedirs(xgb_info_dir, exist_ok=True)
+os.makedirs(os.path.join(xgb_info_dir, "test"), exist_ok=True)
+os.makedirs(os.path.join(xgb_info_dir, "learn"), exist_ok=True)
+
+
 # 1. CARGA Y PREPROCESAMIENTO
 df = pd.read_csv("data/dataset_fase1_diagnostico.csv")
 df = df.drop(columns=['Patient_ID'])
@@ -101,10 +108,62 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(X, y)):
     model = XGBClassifier(**params)
     model.fit(
         X_tr, y_tr, 
-        eval_set=[(X_va, y_va)], 
+        eval_set=[(X_tr, y_tr), (X_va, y_va)], 
         verbose=False
     )
     
+    # Extraer métricas del fold
+    results = model.evals_result()
+    
+    # Guardarlas en estilo CatBoost para el mejor fold (o actualizando cada fold)
+    if fold == skf.n_splits - 1:
+        # Guardar en TSV para validation (test)
+        test_df = pd.DataFrame({'iter': range(len(results['validation_1']['auc'])),
+                                'auc': results['validation_1']['auc']})
+        test_df.to_csv(os.path.join(xgb_info_dir, "test_error.tsv"), sep='\t', index=False)
+        
+        # Guardar en TSV para train (learn)
+        learn_df = pd.DataFrame({'iter': range(len(results['validation_0']['auc'])),
+                                 'auc': results['validation_0']['auc']})
+        learn_df.to_csv(os.path.join(xgb_info_dir, "learn_error.tsv"), sep='\t', index=False)
+        
+        # Guardar JSON de training info (similar a catboost_training.json)
+        training_info = {
+            "meta": {
+                "iteration_count": len(results['validation_0']['auc']),
+                "name": "XGBoost experiment",
+                "loss_function": "Logloss",
+                "metrics": ["AUC"]
+            },
+            "iterations": [
+                {
+                    "iteration": i,
+                    "learn": [results['validation_0']['auc'][i]],
+                    "test": [results['validation_1']['auc'][i]]
+                } for i in range(len(results['validation_0']['auc']))
+            ]
+        }
+        with open(os.path.join(xgb_info_dir, "xgboost_training.json"), "w") as f:
+            json.dump(training_info, f, indent=4)
+            
+        # Generar archivos binarios para TensorBoard igual que CatBoost
+        try:
+            from torch.utils.tensorboard import SummaryWriter
+            writer_learn = SummaryWriter(os.path.join(xgb_info_dir, "learn"))
+            writer_test = SummaryWriter(os.path.join(xgb_info_dir, "test"))
+            
+            for i in range(len(results['validation_0']['auc'])):
+                writer_learn.add_scalar("AUC", results['validation_0']['auc'][i], i)
+                writer_test.add_scalar("AUC", results['validation_1']['auc'][i], i)
+                
+            writer_learn.close()
+            writer_test.close()
+            print(f"📈 Eventos TensorBoard generados automágicamente.")
+        except ImportError:
+            pass
+            
+        print(f"📦 Métricas de entrenamiento guardadas en '{xgb_info_dir}/'")
+        
     oof_preds[val_idx] = model.predict_proba(X_va)[:, 1]
     models.append(model)
     print(f"Fold {fold+1}/5 completado.")

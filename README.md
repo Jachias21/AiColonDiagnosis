@@ -1,187 +1,107 @@
-# AiColonDiagnosis
+# AiColonDiagnosis 🔬
 
-Proyecto de diagnóstico asistido por IA para cáncer de colon con 3 fases:
+[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
+[![PySide6](https://img.shields.io/badge/GUI-PySide6-green.svg)](https://wiki.qt.io/Qt_for_Python)
+[![Streamlit](https://img.shields.io/badge/Dashboard-Streamlit-red.svg)](https://streamlit.io/)
 
-1. Historial médico
-2. Colonoscopia
-3. Imagen histológica
+Proyecto final integrativo de Inteligencia Artificial para el diagnóstico asistido de cáncer de colon. Está estructurado como una herramienta de apoyo clínico integral, abarcando desde la evaluación preventiva del historial médico hasta el análisis por imagenología avanzada.
 
-## Estado actual del proyecto
+## 🌟 Características Principales
 
-Esto es lo que ya está montado en este repo y sí merece la pena ejecutar ahora mismo:
+El sistema acompaña el flujo de diagnóstico a través de **3 Fases** o modelos:
 
-- La app principal `detect_realtime.py` está lista para abrirse.
-- La Fase 2 tiene modelo real cargable: `models/colonoscopy.pt`.
-- La Fase 3 tiene modelo real cargable: `models/microscopy.pt` + `models/microscopy_meta.json`.
-- La Fase 1 usa `models/catboost_crc_risk_model.cbm` si existe; si no, funciona en modo demo.
-- Ya existen los datasets generados en `data/dataset_yolo/` y `data/dataset_colon/`.
-- Ya existen resultados de entrenamiento de colonoscopia en `train_models/model_colonoscopia/entrenamiento/`.
+1. **Fase 1: Análisis de Historial Médico**
+   - Evalúa el riesgo del paciente usando **CatBoost/XGBoost** sobre datos tabulares y clínicos.
+   - Proporciona interpretabilidad mediante valores **SHAP**, detallando variables predictoras de riesgo.
+2. **Fase 2: Colonoscopia en Tiempo Real (Vídeo/Webcam)**
+   - Segmentación y detección simultánea de pólipos utilizando modelos preentrenados y finetuneados (arquitecturas de YOLO y UNet3+).
+   - Incorpora validación de fotogramas para reducir falsos positivos (el pólipo debe persistir en el tiempo de manera continua por ~1 seg).
+3. **Fase 3: Análisis de Imagen Histológica**
+   - Clasificación final sobre biopsias / imágenes de microscopio confirmando el tipo de tejido tumoral o benigno.
 
-## Cómo ejecutarlo ahora mismo
+> 📖 **Para usuarios no técnicos:** Hemos incluido un [Manual de Usuario (Manual_de_Usuario.md)](Manual_de_Usuario.md) que te guiará paso a paso en cómo abrir y usar la aplicación sin conocimientos previos.
 
-Todos los comandos de abajo están pensados para ejecutarse desde la carpeta del proyecto:
+---
 
-```powershell
-cd C:\Programas\Proyecto2\AiColonDiagnosis
-```
+## 🛠️ Instalación y Configuración Inicial
 
-### Opción recomendada: usar el entorno ya creado
+El proyecto se gestiona idealmente con el gestor de dependencias **`uv`**.
 
-Este repo ya tiene `.venv`, así que puedes arrancarlo directamente sin reinstalar nada:
-
-### 1. App principal de diagnóstico (PySide6)
-
-```powershell
-.\.venv\Scripts\python.exe .\main.py
-```
-
-Si prefieres abrir directamente el script de la nueva interfaz:
-
-```powershell
-.\.venv\Scripts\python.exe .\app_pyside6.py
-```
-
-Qué te vas a encontrar:
-
-- Menú principal con acceso al flujo completo o a cada fase por separado.
-- Fase 1: carga de datos clínicos con CatBoost si el modelo está disponible, o modo demo si falta.
-- Fase 2: detección de pólipos con el modelo real `colonoscopy.pt`.
-- Fase 3: clasificación de imagen histológica con el modelo real `microscopy.pt`.
-
-Notas rápidas:
-
-- En la Fase 2 puedes usar webcam o vídeo, según el flujo de la app.
-- En la Fase 1 puedes abrir una explicación SHAP para ver qué variables clínicas han pesado más en la predicción.
-- En la Fase 2 la app separa candidatos de pólipos confirmados: un candidato solo cuenta como pólipo si supera la confianza mínima y persiste aproximadamente 1 segundo.
-- En la Fase 3 puedes seleccionar una o varias imágenes histológicas en la misma ejecución.
-- La app guarda el historial por paciente en `patients_history/` solo cuando ejecutas la consulta completa.
-- Los screenshots se guardan en `screenshots/`.
-
-Controles de vídeo:
-
-- `q`: salir de la fase actual
-- `s`: guardar screenshot
-- `p`: pausar o reanudar
-
-### 2. Dashboard web (analíticas / entrenamiento)
-
-```powershell
-.\.venv\Scripts\python.exe -m streamlit run .\dashboard.py
-```
-
-Después abre en el navegador la URL que te muestre Streamlit, normalmente:
-
-```text
-http://localhost:8501
-```
-
-Lo más útil del dashboard ahora mismo:
-
-- Ver métricas del entrenamiento de colonoscopia ya guardado.
-- Lanzar entrenamiento YOLO de colonoscopia usando el dataset ya preparado.
-- Probar inferencia sobre modelos YOLO de colonoscopia.
-- Entrenar un modelo alternativo de segmentación con ResNet50 para comparar contra YOLO:
-
-```powershell
-.\.venv\Scripts\python.exe .\train_models\model_colonoscopia\train_maskrcnn_resnet50_compare.py
-```
-
-Ese script:
-
-- usa las máscaras exactas de `data/dataset_yolo/masks/`
-- entrena `Mask R-CNN + ResNet50-FPN`
-- guarda curvas y gráficas de entrenamiento
-- compara el modelo nuevo contra `models/colonoscopy.pt`
-- exporta el nuevo modelo a `models/colonoscopy_maskrcnn_resnet50.pth`
-
-Importante:
-
-- El dashboard está orientado sobre todo al flujo YOLO de colonoscopia.
-- La inferencia de microscopía que ya funciona de verdad está integrada en `detect_realtime.py`.
-
-## Si prefieres usar `uv`
-
-Si en tu máquina quieres reconstruir el entorno desde cero:
-
-```powershell
+1. Clona el repositorio a tu máquina local.
+2. Inicia e instala el entorno virtual con:
+```bash
 uv sync
-uv run python .\detect_realtime.py
-uv run streamlit run .\dashboard.py
 ```
 
-## Qué no hace falta ejecutar ahora
+De forma alternativa, el proyecto cuenta con la carpeta local `.venv` la cual puedes usar directamente activando el entorno en Windows (`.\.venv\Scripts\activate`) o Linux/Mac (`source .venv/bin/activate`).
 
-No necesitas preparar datasets otra vez para probar el proyecto actual, porque ya existen:
+---
 
-- `data/dataset_yolo/`
-- `data/dataset_colon/`
+## 🚀 Ejecución de la Plataforma
 
-Por eso estos scripts no son necesarios para arrancar lo que ya funciona:
+### Aplicación Médica Principal (Interfaz PySide6)
 
-```powershell
-python .\prepare_dataset.py
-python .\prepare_colon_dataset.py
+Esta es la herramienta gráfica base donde se concentra todo el flujo clínico:
+
+**Con `uv`:**
+```bash
+uv run python app_pyside6.py
+```
+**O usando tu entorno virtual activado:**
+```bash
+python app_pyside6.py
 ```
 
-Úsalos solo si quieres regenerar los datasets.
+### Dashboard Analítico y Panel de Control
 
-## Archivos importantes
+Para evaluar el entrenamiento, curvas de aprendizaje y comparativas de modelos, despliega el dashboard web:
 
-- `app_pyside6.py`: app principal moderna (PySide6)
-- `detect_realtime.py`: motor original y funciones de inferencia reutilizadas por la app principal
-- `dashboard.py`: panel Streamlit
-- `main.py`: archivo de ejemplo, no es la entrada real del proyecto
-- `models/catboost_crc_risk_model.cbm`: modelo CatBoost de historial médico
-- `models/colonoscopy.pt`: modelo de colonoscopia
-- `models/colonoscopy_unet3plus_effnet.pt`: segmentador UNet3+ usado como modelo principal en Fase 2
-- `models/microscopy.pt`: modelo de microscopía
-- `models/microscopy_meta.json`: metadata necesaria para cargar el modelo de microscopía
-- `train_models/model_colonoscopia/entrenamiento/`: métricas y pesos ya generados
-
-## Nuevo entrenamiento de segmentacion de polipos
-
-Para probar un segmentador medico preentrenado antes de tocar el YOLO de produccion:
-
-```powershell
-.\.venv\Scripts\python.exe .\train_models\model_colonoscopia\train_pretrained_polyp_segmenter.py
+**Con `uv`:**
+```bash
+uv run streamlit run dashboard.py
 ```
 
-El script nuevo:
+---
 
-- parte de `andreribeiro87/unet3plus-efficientnet-kvasir-seg`
-- descarga Kvasir-SEG oficial si no existe
-- deduplica contra el test local para evitar fugas de datos
-- mantiene `models/colonoscopy.pt` como baseline
-- exporta el candidato a `models/colonoscopy_unet3plus_effnet.pt`
-- guarda curvas, galeria visual y comparativa en `train_models/model_colonoscopia/pretrained_polyp_segmenter/`
+## 📁 Archivos y Modelos Clave
 
-Comandos utiles:
+El repositorio se compone actualmente de los productos finales ejecutables:
 
-```powershell
-# Solo preparar datos y comprobar duplicados, sin entrenar
-.\.venv\Scripts\python.exe .\train_models\model_colonoscopia\train_pretrained_polyp_segmenter.py --prepare-only
+- `app_pyside6.py`: Motor gráfico principal y aplicación integral para las 3 fases (PySide6).
+- `detect_realtime.py`: Lógica fundacional para la inferencia, captura de video y cálculos predictivos.
+- `dashboard.py`: Panel de analítica en `Streamlit`.
+- **Modelos Finales (`models/`)**:
+   - `catboost_crc_risk_model.cbm`: Modelo tabular de la Fase 1 (si no está disponible, un fallback demo se activa).
+   - `colonoscopy.pt` / `colonoscopy_unet3plus_effnet.pt`: Modelos principales asignados de segmentación y detección para imagen laparoscópica.
+   - `microscopy.pt`: Modelo de clasificación celular de patología (Fase 3) (+ `microscopy_meta.json`).
 
-# Entrenamiento rapido de prueba
-.\.venv\Scripts\python.exe .\train_models\model_colonoscopia\train_pretrained_polyp_segmenter.py --epochs 8 --image-size 352
+---
 
-# Anadir normales desde HyperKvasir en modo streaming limitado
-.\.venv\Scripts\python.exe .\train_models\model_colonoscopia\train_pretrained_polyp_segmenter.py --download-hyperkvasir-normals
+## 🧪 Sección para Desarrolladores
+
+### 1. Regeneración de Datasets Experimentales
+Si deseas recrear desde cero los datos de segmentación:
+```bash
+python prepare_dataset.py
+python prepare_colon_dataset.py
 ```
+*Nota: Los datasets finales ya se encuentran persistidos en `data/dataset_yolo/` y `data/dataset_colon/` por lo que este paso puede ser directamente evitado.*
 
-Si tienes CVC-ClinicDB descargado de Kaggle, ponlo en:
+### 2. Entrenamientos y Comparativas
+Los flujos de investigación han derivado en múltiples pruebas comparando distintos enfoques de segmentación (YOLO frente a arquitecturas tipo *Mask R-CNN* o basados en *UNet*).
 
-```text
-data/external_polyp_sources/cvc_clinicdb/
-```
+- **Entrenar Segmentación con MaskRCNN (ResNet50):**
+  ```bash
+  python train_models/model_colonoscopia/train_maskrcnn_resnet50_compare.py
+  ```
+- **Entrenar Segmentador UNet3+ (basado en EfficientNet):**
+  Añadido fine-tuning sobre `andreribeiro87/unet3plus-efficientnet-kvasir-seg` deduplicando filtraciones usando Kvasir-SEG o datasets externos (como *CVC-ClinicDB*).
+  ```bash
+  # Preparar y verificar fugas de datos sin entrenar:
+  python train_models/model_colonoscopia/train_pretrained_polyp_segmenter.py --prepare-only
 
-El script lo importara automaticamente si encuentra carpetas de imagenes y mascaras.
+  # Lanzar entrenamiento rápido (~8 epochs):
+  python train_models/model_colonoscopia/train_pretrained_polyp_segmenter.py --epochs 8 --image-size 352
+  ```
 
-## Limitación actual
-
-Si falta el archivo:
-
-```text
-models/catboost_crc_risk_model.cbm
-```
-
-Mientras no exista, la Fase 1 seguirá en modo demo y el flujo continuará hacia las fases siguientes.
+Las curvas, métricas resultantes `.json` y evaluaciones se volcarán respectivamente en los sub-directorios del pipeline en `train_models/`.
